@@ -28,14 +28,13 @@ from pyDataverse.api import NativeApi
 from dvuploader import DVUploader, File
 
 class File:
-    def __init__(self, directoryLabel, filepath, description):
+    def __init__(self, directoryLabel, filepath, description, mimeType):
         self.directoryLabel = directoryLabel
         self.filepath = filepath
         self.description = description
-
+        self.mimeType = mimeType
     def __repr__(self):
-        return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}')"
-
+        return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}', mimeType='{self.mimeType}')"
 
 def get_files_array(directory):
     files = []
@@ -44,10 +43,12 @@ def get_files_array(directory):
             file_path = os.path.join(directory, filename)
             file_name_without_extension = os.path.splitext(filename)[0]
             description = f"This file's name is '{file_name_without_extension}' and is a fits file."
-            directory_label = ""  # Update this as needed
+            directory_label = ""
+            mimeType = "application/fits"
             file_dict = {
                 "directoryLabel": directory_label,
                 "filepath": file_path,
+                "mimeType": mimeType,
                 "description": description
             }
             files.append(file_dict)
@@ -87,31 +88,31 @@ elif not re.match("^https://", args.server_url):
     # Add "https://" if no protocol is specified
     args.server_url = "https://{}".format(args.server_url)
 
-def upload_file_to_dataset(base_url, api_token, doi, file_path):
-    cmd = [
-        "dvuploader",
-        "--token", api_token,
-        "--dvurl", server_url,
-        "--dataset", persistent_id,
-        "--file", file_path
-    ]
-    api = NativeApi(base_url, api_token)
-    dataset_id = api.get_dataset(doi).json()['data']['id']
-    with open(file_path, 'rb') as file:
-        df = Datafile()
-        file_metadata = {
-            "description": "FITS file for star {}".format(os.path.basename(file_path)),
-            "pid": doi,
-            "filename": os.path.basename(file_path),
-            "categories": ["Astronomy"]
-        }
-        df.set(file_metadata)
-        response = api.upload_datafile(dataset_id, file, json_str=df.json(), is_pid=False)
-        # json_metadata = json.dumps({"description": file_metadata['description'], "categories": file_metadata['categories']})
-        # response = api.upload_datafile(dataset_id, file_path, json_str=json_metadata, is_pid=False)
+# def upload_file_to_dataset(base_url, api_token, doi, file_path):
+#     cmd = [
+#         "dvuploader",
+#         "--token", api_token,
+#         "--dvurl", server_url,
+#         "--dataset", persistent_id,
+#         "--file", file_path
+#     ]
+#     api = NativeApi(base_url, api_token)
+#     dataset_id = api.get_dataset(doi).json()['data']['id']
+#     with open(file_path, 'rb') as file:
+#         df = Datafile()
+#         file_metadata = {
+#             "description": "FITS file for star {}".format(os.path.basename(file_path)),
+#             "pid": doi,
+#             "filename": os.path.basename(file_path),
+#             "mimeType": "application/fits",
+#             "categories": ["Astronomy"]
+#         }
+#         df.set(file_metadata)
+#         response = api.upload_datafile(dataset_id, file, json_str=df.json(), is_pid=False)
 
-    return response
+#     return response
 
+# Use for testing if connection to Dataverse server is successful
 def get_dataset_info(base_url, doi):
     api = NativeApi(base_url)
     response = api.get_dataset(doi)
@@ -124,6 +125,7 @@ def get_dataset_info(base_url, doi):
 def main():
     try:
         files_array = get_files_array(args.folder)
+
         dvuploader = DVUploader(files=files_array)
         uploader = dvuploader.upload(
             api_token=args.token,
