@@ -44,7 +44,7 @@ def get_files_array(directory):
             file_name_without_extension = os.path.splitext(filename)[0]
             description = f"This file's name is '{file_name_without_extension}' and is a fits file."
             directory_label = ""
-            mimeType = "application/fits"
+            mimeType = "image/fits"
             file_dict = {
                 "directoryLabel": directory_label,
                 "filepath": file_path,
@@ -87,30 +87,6 @@ if re.match("^http://", args.server_url):
 elif not re.match("^https://", args.server_url):
     # Add "https://" if no protocol is specified
     args.server_url = "https://{}".format(args.server_url)
-
-# def upload_file_to_dataset(base_url, api_token, doi, file_path):
-#     cmd = [
-#         "dvuploader",
-#         "--token", api_token,
-#         "--dvurl", server_url,
-#         "--dataset", persistent_id,
-#         "--file", file_path
-#     ]
-#     api = NativeApi(base_url, api_token)
-#     dataset_id = api.get_dataset(doi).json()['data']['id']
-#     with open(file_path, 'rb') as file:
-#         df = Datafile()
-#         file_metadata = {
-#             "description": "FITS file for star {}".format(os.path.basename(file_path)),
-#             "pid": doi,
-#             "filename": os.path.basename(file_path),
-#             "mimeType": "application/fits",
-#             "categories": ["Astronomy"]
-#         }
-#         df.set(file_metadata)
-#         response = api.upload_datafile(dataset_id, file, json_str=df.json(), is_pid=False)
-
-#     return response
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info(base_url, doi):
