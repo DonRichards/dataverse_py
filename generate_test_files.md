@@ -24,5 +24,9 @@ This command generates 100 text files in the `generated_files` directory.
 ## Verify unique hashes
 This will be 1 less than the number of files generated because the script itself is included in the count.
 ```shell
-find generated_files/ -type f -exec md5 {} + | sort | uniq | wc -l
+# Mac
+find generated_files/ -type f -exec md5 -r {} + | awk '{print $1}' | sort | uniq | wc -l
+
+# Linux
+find generated_files/ -type f -exec md5sum -r {} + | awk '{print $1}' | sort | uniq | wc -l
 ```
