@@ -97,3 +97,6 @@ See [generate_test_files.md](generate_test_files.md) for details.
 
 ## ToDos
 1. ~~Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.~~ ADDED
+
+## References
+1. [Sample FITS File](https://open-bitbucket.nrao.edu/projects/CASA/repos/casatestdata/browse/fits/1904-66_CSC.fits)

@@ -13,13 +13,16 @@ This Python script generates a specified number of text files with random alphan
 1. Ensure you have Python installed on your system.
 2. Place the script in a directory of your choice.
 3. Run the script from the command line, specifying the number of files to create and the target directory. 
-   
+
 
 ### Example: 
 ```shell
-python3 generate_test_files.py 100 ./generated_files
+python3 generate_test_files.py 100 text ./generated_files
 ```
-This command generates 100 text files in the `generated_files` directory.
+This command generates 100 text files in the `generated_files` directory. The other option is to create fits files. The command below creates 100 fits files in the `generated_files` directory.
+```shell
+python3 generate_test_files.py 100 fits ./generated_files
+```
 
 ## Verify unique hashes
 This will be 1 less than the number of files generated because the script itself is included in the count.
