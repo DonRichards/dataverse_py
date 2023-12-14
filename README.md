@@ -89,16 +89,16 @@ pipenv run python py_add_fits_files_to_dio.py --help
 ## Support files
 These file can be used independently of the main script.
 
-### fits_extract.py
+### FITS Metadata Extractor (fits_extract.py)
 See [fits_extract.md](fits_extract.md) for details.
 
-### Generate Test Files
+### Generate Test Files (generate_test_files.py)
 See [generate_test_files.md](generate_test_files.md) for details.
 
-### Mime Type Checker
+### Mime Type Checker (mimetype.py)
 See [mimetype.md](mimetype.md) for details.
 
-### Information on FITS files (header metadata)
+### Information on FITS files in general
 See [FITS_Description.md](FITS_Description.md) for details.
 
 ## Gotchas
