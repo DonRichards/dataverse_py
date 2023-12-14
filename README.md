@@ -1,5 +1,5 @@
 ## Dataverse Python Script(s)
-Script to automate the process of adding potentially thousands of FITS files to a simple DOI within a Dataverse server.
+Script to automate the process of adding potentially thousands of ~~FITS~~ files to a simple DOI within a Dataverse server. The mimetypes is automatically detected and the appropriate metadata is extracted and added to the description of the DOI. If the mine type is not recognized, the script will assign it as a binary file (_application/octet-stream_) to prevent upload failure. Several [shape files mime types](https://en.wikipedia.org/wiki/Shapefile) are included in the script (_application/x-esri-shape_ & _application/x-qgis_) but more can be added as needed.
 
 ### Files
 1. __dd_fits_files_to_doi.sh__: Original bash file
@@ -83,4 +83,4 @@ Run help for options
 1. __Subdirectories with FITS files__: if the directory has subdirectories we need to discuss the expected behavior and modify this code accordingly.
 
 ## ToDos
-1. Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.
+1. ~~Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.~~ ADDED
