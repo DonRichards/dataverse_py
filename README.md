@@ -85,11 +85,20 @@ Run help for options
 pipenv run python py_add_fits_files_to_dio.py --help
 ```
 
-#### fits_extract.py
-See [FITS_Description.md](FITS_Description.md) for details.
+## Support files
+These file can be used independently of the main script.
 
-## Generate Test Files
+### fits_extract.py
+See [fits_extract.md](fits_extract.md) for details.
+
+### Generate Test Files
 See [generate_test_files.md](generate_test_files.md) for details.
+
+### Mime Type Checker
+See [mimetype.md](mimetype.md) for details.
+
+### Information on FITS files (header metadata)
+See [FITS_Description.md](FITS_Description.md) for details.
 
 ## Gotchas
 1. __Processing order__: there is no telling the order at which the system is reading in the files. If sorting them alphabetically or be creation date is needed please let me know.
