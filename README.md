@@ -24,19 +24,39 @@ Found that using __pyDataverse.api__ added options that would have been difficul
 #### Suggested Setup (virtual environment) - _not required_
 Install [pipenv](https://pipenv.pypa.io/en/latest/installation.html) to simplifying dependency management and providing consistent environments across different installations and it should avoid version conflicts with libraries already installed.
 ```shell
-# Install pipenv
+# Install pipenv (Linux)
 python3 -m pip install pipenv
+# OR (Mac)
+brew install pyenv
+
+# Install Python 3.10.12 using pyenv
+pyenv install 3.10.12
 
 # Create a virtual environment at a specific Python version
 pipenv --python 3.10.12
 
 # 2 Ways to install packages into the virtual environment.
-# 1st, manually install into the virtual environment.
-pipenv install dvuploader pyDataverse
-
-# OR 2nd, use the Pipfile files (preferred).
+# Either manually install packages into the virtual environment.
+pipenv install dvuploader pyDataverse mimetype-description astropy
+# OR use the Pipfile files (preferred).
 # This is useful for ensuring consistent environments across different installations.
 pipenv install
+
+# Optional: To run the following commands as python instead of pipenv run python
+# Run a shell within the virtual environment
+pipenv shell
+# To exit the shell
+exit
+# To remove the virtual environment
+pipenv --rm
+```
+
+#### Install libraries (locally)
+```shell
+python3 -m pip install dvuploader pyDataverse mimetype-description
+
+# Optional Packages (for the fits_extract.py script)
+python3 -m pip install astropy
 ```
 
 __Note__: "_./_" is a shorthand notation used by the computer to specify the execution of a file, especially when the file itself indicates that it's a Python script. In simpler terms, "_python foo.py_" and "_./foo.py_" essentially perform the same action.
@@ -46,15 +66,10 @@ To elaborate further, when running a script with pipenv instead of the local Pyt
 __For Example__
 ```shell
 # Run using the "Locally" installed
-./example.py --help
+./py_add_fits_files_to_dio.py --help
 
 # Run using pipenv
-pipenv run python example.py --help
-```
-
-#### Install libraries (locally)
-```shell
-python3 -m pip install dvuploader pyDataverse
+pipenv run python py_add_fits_files_to_dio.py --help
 ```
 
 ### File Descriptions
@@ -71,12 +86,8 @@ pipenv run python py_add_fits_files_to_dio.py --help
 ```
 
 #### fits_extract.py
-Intended to be integrated into the py_add_fits_files_to_dio.py script to automate the extraction of the metadata and push it into the description.
+See [FITS_Description.md](FITS_Description.md) for details.
 
-Run help for options
-```shell
-./fits_extract.py --help
-```
 ## Generate Test Files
 See [generate_test_files.md](generate_test_files.md) for details.
 
