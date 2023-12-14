@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
-
 import argparse
 import os
 import random
@@ -19,8 +17,7 @@ def create_text_files(num_files, directory):
         filename = random_string(random.randint(4, 18)) + ".txt"
         filepath = os.path.join(directory, filename)
         with open(filepath, 'w') as file:
-            file.write(random_string(random.randint(10, 1000)))
-        
+            file.write(str(i) + "_" + random_string(random.randint(10, 1000)))
         # Update counter
         remaining = num_files - i - 1
         print(f". Files remaining: {remaining}", end='\r')
