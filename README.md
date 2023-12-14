@@ -77,6 +77,8 @@ Run help for options
 ```shell
 ./fits_extract.py --help
 ```
+## Generate Test Files
+See [generate_test_files.md](generate_test_files.md) for details.
 
 ## Gotchas
 1. __Processing order__: there is no telling the order at which the system is reading in the files. If sorting them alphabetically or be creation date is needed please let me know.
