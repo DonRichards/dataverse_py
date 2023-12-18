@@ -26,7 +26,7 @@ Found that using __pyDataverse.api__ added options that would have been difficul
 Install [pipenv](https://pipenv.pypa.io/en/latest/installation.html) to simplifying dependency management and providing consistent environments across different installations and it should avoid version conflicts with libraries already installed.
 ```shell
 # Install pipenv (Linux)
-python3 -m pip install pipenv
+python -m pip install pipenv
 # OR (Mac)
 brew install pyenv
 
@@ -38,7 +38,7 @@ pipenv --python 3.10.12
 
 # 2 Ways to install packages into the virtual environment.
 # Either manually install packages into the virtual environment.
-pipenv install dvuploader pyDataverse mimetype-description astropy
+pipenv install dvuploader pyDataverse mimetype-description astropy shutil
 # OR use the Pipfile files (preferred).
 # This is useful for ensuring consistent environments across different installations.
 pipenv install
@@ -54,10 +54,10 @@ pipenv --rm
 
 #### Install libraries (locally)
 ```shell
-python3 -m pip install dvuploader pyDataverse mimetype-description
+python -m pip install dvuploader pyDataverse mimetype-description
 
 # Optional Packages (for the fits_extract.py script)
-python3 -m pip install astropy
+python -m pip install astropy
 ```
 
 __Note__: "_./_" is a shorthand notation used by the computer to specify the execution of a file, especially when the file itself indicates that it's a Python script. In simpler terms, "_python foo.py_" and "_./foo.py_" essentially perform the same action.

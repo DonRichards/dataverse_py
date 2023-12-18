@@ -17,11 +17,11 @@ This Python script generates a specified number of text files with random alphan
 
 ### Example: 
 ```shell
-python3 generate_test_files.py 100 text ./generated_files
+python generate_test_files.py 100 text ./generated_files
 ```
 This command generates 100 text files in the `generated_files` directory. The other option is to create fits files. The command below creates 100 fits files in the `generated_files` directory.
 ```shell
-python3 generate_test_files.py 100 fits ./generated_files
+python generate_test_files.py 100 fits ./generated_files
 ```
 
 ## Verify unique hashes
