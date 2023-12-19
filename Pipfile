@@ -7,6 +7,9 @@ name = "pypi"
 dvuploader = "*"
 pydataverse = "*"
 mimetype-description = "*"
+grequests = "*"
+requests = "*"
+astropy = "*"
 
 [dev-packages]
 
