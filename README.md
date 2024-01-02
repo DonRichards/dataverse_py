@@ -38,7 +38,7 @@ pipenv --python 3.10.12
 
 # 2 Ways to install packages into the virtual environment.
 # Either manually install packages into the virtual environment.
-pipenv install dvuploader pyDataverse mimetype-description astropy shutil
+pipenv install dvuploader pyDataverse mimetype-description astropy shutil grequests requests
 # OR use the Pipfile files (preferred).
 # This is useful for ensuring consistent environments across different installations.
 pipenv install
