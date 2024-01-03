@@ -187,6 +187,7 @@ def get_dataset_info(base_url, doi):
         return response.json()
     else:
         raise Exception(f"Error retrieving dataset: {response.json()['message']}")
+
 # add a loop number to the upload_file function to try again if it fails
 def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
     try:
@@ -194,7 +195,7 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
         print("Uploading files...")
         # Print all of the dvuploader.upload functions available
         # redirect dvuploader_log to standard output
-        dvuploader_log = dvuploader.upload(
+        dvuploader.upload(
             api_token=args.token,
             dataverse_url=args.server_url,
             persistent_id=args.persistent_id,
@@ -208,8 +209,8 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
         upload_file(api_token, dataverse_url, persistent_id, files, loop_number=loop_number+1)
+    return True
 
-    return dvuploader_log
 def check_if_hash_is_online(file_hash):
     """
     Checks if the file hash is already online.
