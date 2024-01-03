@@ -258,7 +258,8 @@ def main():
                 files = files_array[i:]
             else:
                 files = files_array[i:i+10]
-            print(f"Uploading files {i} to {i+10}...")
+            # Print the range of files being uploaded and how many are left
+            print(f"Uploading files {i} to {i+10}... {len(files_array) - i - 10} files left to upload.")
             headers = {
                 "X-Dataverse-key": args.token
             }
@@ -302,7 +303,7 @@ def get_list_of_files_already_online():
         files_already_online.append(file['dataFile'])
     return files_already_online
 
-if __name__ == "__main__":
+def check_list_of_files_already_online_compared_to_local():
     # Write get_list_of_files_already_online to a file for debugging purposes, the filename should be 
     original_str = args.persistent_id
     # Replacing special characters (non-alphanumeric) with underscores
@@ -316,6 +317,9 @@ if __name__ == "__main__":
     else:
         # Print list_of_hashes_online to the console
         print(f"List of files already online is empty: {list_of_hashes_online}")
+
+if __name__ == "__main__":
+    check_list_of_files_already_online_compared_to_local()
     wipe_report()
     main()
     print("Upload complete.")
