@@ -31,6 +31,7 @@ import pyDataverse.api
 from dvuploader import DVUploader, File
 from mimetype_description import guess_mime_type, get_mime_type_description
 import requests
+import hashlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
@@ -131,12 +132,24 @@ def get_files_array(directory):
         file_path = os.path.join(directory, filename)
         file_name_without_extension = os.path.splitext(filename)[0]
         description = f"This file's name is '{file_name_without_extension}' and is a fits file."
+        # Get the MD5 hash of the file
+        # The following code is from https://stackoverflow.com/a/3431838
+        with open(file_path, 'rb') as fh:
+            # Print the file path to the console on the same line as the MD5 hash
+            print(f"Calculating MD5 hash for {file_path}...", end="\r")
+            file_hash = hashlib.md5()
+            while True:
+                hash_data = fh.read(8192)
+                if not hash_data:
+                    break
+                file_hash.update(hash_data)
         directory_label = ""
         file_dict = {
             "directoryLabel": directory_label,
             "filepath": file_path,
             "mimeType": mimeType,
-            "description": description
+            "description": description,
+            "hash": file_hash.hexdigest()
         }
         files.append(file_dict)
     # Sort the files array by file name in reverse order
