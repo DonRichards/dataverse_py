@@ -136,7 +136,7 @@ def get_files_array(directory):
         # The following code is from https://stackoverflow.com/a/3431838
         with open(file_path, 'rb') as fh:
             # Print the file path to the console on the same line as the MD5 hash
-            print(f"Calculating MD5 hash for {file_path}...", end="\r")
+            print(f" Calculating MD5 hash for {file_path}..................... .", end="\r")
             file_hash = hashlib.md5()
             while True:
                 hash_data = fh.read(8192)
@@ -151,9 +151,19 @@ def get_files_array(directory):
             "description": description,
             "hash": file_hash.hexdigest()
         }
+        # File hash is already online, so skip it
+        if check_if_hash_is_online(file_hash.hexdigest()):
+            print(f"Skipping file {file_path} because it is already online.")
+            continue
         files.append(file_dict)
+    print(" Calculating MD5 hash .............................................. Done.")
     # Sort the files array by file name in reverse order
     files_sorted = sorted(files, key=lambda k: k['filepath'], reverse=True)
+    # Write the files array to a file for debugging purposes
+    with open('file_report.json', 'w') as outfile:
+        # Check that the files_sorted array is not empty
+        if files_sorted:
+            json.dump(files_sorted, outfile)
     return files_sorted
 
 # Check if all required arguments are provided
@@ -191,8 +201,8 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
         )
     except Exception as e:
         print(f"An error occurred: {e}")
-        time.sleep(5)
-        print('Trying again...')
+        print('Trying again in 10 seconds...')
+        time.sleep(10)
         # if the loop_number is greater than 5, then exit the program
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
@@ -200,6 +210,19 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
         upload_file(api_token, dataverse_url, persistent_id, files, loop_number=loop_number+1)
 
     return dvuploader_log
+def check_if_hash_is_online(file_hash):
+    """
+    Checks if the file hash is already online.
+    """
+    original_str = args.persistent_id
+    modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
+    # Open the json file containing the list of files and thier "md5" hashes and check if the file_hash is in the list
+    with open(modified_str) as json_file:
+        data = json.load(json_file)
+        for file in data:
+            if file_hash in file.values():
+                return True
+    return False
 
 def check_and_unlock_dataset(server_url, dataset_id, token):
     """
@@ -251,6 +274,48 @@ def main():
         print(f"An error occurred: {e}")
         sys.exit(1)
 
+def wipe_report():
+    """
+    Wipe the file_report.json file.
+    """
+    with open('file_report.json', 'w') as outfile:
+        json.dump([], outfile)
+
+def get_list_of_files_already_online():
+    """
+    Get a list of files already online.
+    """
+    headers = {
+        "X-Dataverse-key": args.token
+    }
+    first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
+    response = requests.get(first_url_call, headers=headers)
+    data = response.json()
+    dataset_id = data['data']['id']
+    check_and_unlock_dataset(args.server_url, dataset_id, args.token)
+    # Get the list of files already online
+    url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:latest/files"
+    second_response = requests.get(url, headers=headers)
+    full_data = second_response.json()
+    files_already_online = []
+    for file in full_data['data']:
+        files_already_online.append(file['dataFile'])
+    return files_already_online
+
 if __name__ == "__main__":
+    # Write get_list_of_files_already_online to a file for debugging purposes, the filename should be 
+    original_str = args.persistent_id
+    # Replacing special characters (non-alphanumeric) with underscores
+    modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
+    list_of_hashes_online = get_list_of_files_already_online()
+    # If list_of_hashes_online is empty, then skip the json.dump
+    if list_of_hashes_online:
+        with open(modified_str, 'w') as outfile:
+            json.dump(list_of_hashes_online, outfile)
+            print(f"List of files already online written to {modified_str}")
+    else:
+        # Print list_of_hashes_online to the console
+        print(f"List of files already online is empty: {list_of_hashes_online}")
+    wipe_report()
     main()
     print("Upload complete.")
