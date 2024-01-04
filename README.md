@@ -102,11 +102,18 @@ See [mimetype.md](mimetype.md) for details.
 See [FITS_Description.md](FITS_Description.md) for details.
 
 ## Gotchas
-1. __Processing order__: there is no telling the order at which the system is reading in the files. If sorting them alphabetically or be creation date is needed please let me know.
+1. __Processing order__: there is no telling the order at which the system is reading in the files. It does sort alphabetically but that doesn't mean it will process them in that order. This is important to know because the order of the files is important to the user.
 1. __Subdirectories with FITS files__: if the directory has subdirectories we need to discuss the expected behavior and modify this code accordingly.
 
 ## ToDos
 1. ~~Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.~~ ADDED
+
+## Troubleshooting
+
+- error:
+  - `SystemError: (libev) error creating signal/async pipe: Too many open files`
+- solution (for Mac & Linux):
+  - `ulimit -n 4096`
 
 ## References
 1. [Sample FITS File](https://open-bitbucket.nrao.edu/projects/CASA/repos/casatestdata/browse/fits/1904-66_CSC.fits)
