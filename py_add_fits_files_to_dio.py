@@ -2,7 +2,7 @@
 
 # Path: py_add_fits_files_to_dio.py
 
-# Using pyDataverse to upload files to Dataverse
+# This script uses pyDataverse to upload files to Dataverse
 # ----------------------------------------------
 
 # This script iterates through each (originally only for fits) file in the specified directory, extracts the star number from
@@ -171,6 +171,7 @@ def get_files_array(directory):
         # Check that the files_sorted array is not empty
         if files_sorted:
             json.dump(files_sorted, outfile)
+    print("")
     return files_sorted
 
 # Check if all required arguments are provided
@@ -269,7 +270,7 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
     lock_url = f"{server_url}/api/datasets/{dataset_id}/locks"
     while True:
         try:
-            lock_list_response = requests.get(lock_url, headers=headers, timeout=15)
+            lock_list_response = requests_retry_session().get(lock_url, headers=headers, timeout=15)
         except requests.exceptions.HTTPError as e:
             print(f"HTTP error: {e}")
         except requests.exceptions.ConnectionError as e:
@@ -309,7 +310,7 @@ def main(loop_number=0):
                 "X-Dataverse-key": args.token
             }
             first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
-            response = requests.get(first_url_call, headers=headers, timeout=15)
+            response = requests_retry_session().get(first_url_call, headers=headers, timeout=15)
             data = response.json()
             dataset_id = data['data']['id']
             check_and_unlock_dataset(args.server_url, dataset_id, args.token)
@@ -340,7 +341,7 @@ def get_list_of_files_already_online():
         "X-Dataverse-key": args.token
     }
     first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
-    response = requests.get(first_url_call, headers=headers)
+    response = requests_retry_session().get(first_url_call, headers=headers)
     data = response.json()
 
     if 'status' in data and data['status'] == 'ERROR' and data['message'] == 'Bad api key ':
@@ -351,7 +352,7 @@ def get_list_of_files_already_online():
     check_and_unlock_dataset(args.server_url, dataset_id, args.token)
     # Get the list of files already online
     url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:latest/files"
-    second_response = requests.get(url, headers=headers)
+    second_response = requests_retry_session().get(url, headers=headers)
     full_data = second_response.json()
     files_already_online = []
     for file in full_data['data']:
