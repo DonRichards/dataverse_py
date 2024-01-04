@@ -37,7 +37,6 @@ import urllib.request
 import pyDataverse.api
 from dvuploader import DVUploader, File
 from mimetype_description import guess_mime_type, get_mime_type_description
-import requests
 import hashlib
 
 parser = argparse.ArgumentParser()
@@ -203,6 +202,25 @@ def get_dataset_info(base_url, doi):
     else:
         raise Exception(f"Error retrieving dataset: {response.json()['message']}")
 
+def requests_retry_session(
+    retries=3,
+    backoff_factor=0.3,
+    status_forcelist=(500, 502, 504),
+    session=None,
+):
+    session = session or requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
 # add a loop number to the upload_file function to try again if it fails
 def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
     try:
@@ -290,7 +308,7 @@ def main(loop_number=0):
                 "X-Dataverse-key": args.token
             }
             first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
-            response = requests.get(first_url_call, headers=headers)
+            response = requests.get(first_url_call, headers=headers, timeout=15)
             data = response.json()
             dataset_id = data['data']['id']
             check_and_unlock_dataset(args.server_url, dataset_id, args.token)
@@ -299,7 +317,12 @@ def main(loop_number=0):
 
     except Exception as e:
         print(f"An error occurred: {e}")
-        sys.exit(1)
+        print('Trying again in 10 seconds...')
+        time.sleep(10)
+        if loop_number > 5:
+            print('Loop number is greater than 5. Exiting program.')
+            sys.exit(1)
+        main(loop_number=loop_number+1)
 
 def wipe_report():
     """
@@ -332,6 +355,7 @@ def get_list_of_files_already_online():
     files_already_online = []
     for file in full_data['data']:
         files_already_online.append(file['dataFile'])
+    print(f"Found {len(files_already_online)} files for this DOI.")
     return files_already_online
 
 def check_list_of_files_already_online_compared_to_local():
@@ -339,6 +363,7 @@ def check_list_of_files_already_online_compared_to_local():
     original_str = args.persistent_id
     # Replacing special characters (non-alphanumeric) with underscores
     modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
+    # This downloads the list of files already online and writes it to a file.
     list_of_hashes_online = get_list_of_files_already_online()
     # If list_of_hashes_online is empty, then skip the json.dump
     if list_of_hashes_online:
@@ -350,7 +375,10 @@ def check_list_of_files_already_online_compared_to_local():
         print(f"List of files already online is empty: {list_of_hashes_online}")
 
 if __name__ == "__main__":
+    print("Get a list of files already for this dataset.")
     check_list_of_files_already_online_compared_to_local()
+    print("Wiping file_report.json...")
     wipe_report()
+    print("Starting main()...")
     main()
-    print("Upload complete.")
+    print("Done.")
