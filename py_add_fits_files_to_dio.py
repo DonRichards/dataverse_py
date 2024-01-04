@@ -293,19 +293,28 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
             time.sleep(5)
             print('Trying again...')
 
-def main(loop_number=0):
+def main(loop_number=0, start_time=None, time_per_batch=None):
+    if start_time is None:
+        start_time = time.time()
+    if time_per_batch is None:
+        time_per_batch = []
+
     try:
         files_array = get_files_array(args.folder)
+        total_files = len(files_array)
+        files_per_batch = 10
+
         # Iterate 10 items in files_array at a time.
         # This is to avoid the "too many files open" error
         # when uploading a large number of files.
         for i in range(0, len(files_array), 10):
+            batch_start_time = time.time()
             if i + 10 > len(files_array):
                 files = files_array[i:]
             else:
                 files = files_array[i:i+10]
             # Print the range of files being uploaded and how many are left
-            print(f"Uploading files {i} to {i+10}... {len(files_array) - i - 10} files left to upload.")
+            print(f"Uploading files {i} to {i+10}... {len(files_array) - i - 10}")
             headers = {
                 "X-Dataverse-key": args.token
             }
@@ -316,6 +325,14 @@ def main(loop_number=0):
             check_and_unlock_dataset(args.server_url, dataset_id, args.token)
             # Pipe the output of the upload_file function to a variable
             upload_file(args.token, args.server_url, args.persistent_id, files)
+            batch_end_time = time.time()
+            time_per_batch.append(batch_end_time - batch_start_time)
+            average_time_per_batch = sum(time_per_batch) / len(time_per_batch)
+            batches_left = (total_files - i) / files_per_batch
+            estimated_time_left = batches_left * average_time_per_batch
+            hours, remainder = divmod(estimated_time_left, 3600)
+            minutes, _ = divmod(remainder, 60)
+            print(f"Uploading files {i} to {i+files_per_batch}... {total_files - i - files_per_batch} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
 
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -324,7 +341,7 @@ def main(loop_number=0):
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
-        main(loop_number=loop_number+1)
+        main(loop_number=loop_number+1, start_time=start_time, time_per_batch=time_per_batch)
 
 def wipe_report():
     """
@@ -357,7 +374,10 @@ def get_list_of_files_already_online():
     files_already_online = []
     for file in full_data['data']:
         files_already_online.append(file['dataFile'])
-    print(f"Found {len(files_already_online)} files for this DOI.")
+    print(f"Found {len(files_already_online)} files for this DOI online.")
+    # Write the files_already_online.json array to a file for debugging purposes
+    with open('files_already_online.json', 'w') as outfile:
+        json.dump(files_already_online, outfile)
     return files_already_online
 
 def check_list_of_files_already_online_compared_to_local():
