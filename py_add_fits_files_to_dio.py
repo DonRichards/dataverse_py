@@ -23,6 +23,7 @@ import gevent.monkey
 gevent.monkey.patch_all(thread=False, select=False)
 import grequests
 import requests
+import urllib3
 
 # Import required modules
 import argparse
@@ -38,13 +39,14 @@ import pyDataverse.api
 from dvuploader import DVUploader, File
 from mimetype_description import guess_mime_type, get_mime_type_description
 import hashlib
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
 parser.add_argument("-t", "--token", help="API token for authentication.", required=True)
 parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset.", required=True)
 
-# Define the missing function
 def get_dataset_info(server_url, persistent_id):
     """Get the dataset info from the Dataverse server."""
     # Get the dataset ID # of the DOI
@@ -70,7 +72,6 @@ class File:
         self.mimeType = mimeType
     def __repr__(self):
         return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}', mimeType='{self.mimeType}')"
-
 
 def show_help():
     print("")
