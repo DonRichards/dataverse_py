@@ -11,6 +11,13 @@
 # The output of each curl command, along with relevant data, is logged to 'log.txt' for record-keeping
 # and debugging purposes.
 
+# Troubleshooting
+# ---------------
+# If you get the following error:
+# SystemError: (libev) error creating signal/async pipe: Too many open files
+# Then run the following command:
+# ulimit -n 4096
+
 # Fixes some issues with grequests and urllib3
 import gevent.monkey
 gevent.monkey.patch_all(thread=False, select=False)
@@ -169,6 +176,14 @@ def get_files_array(directory):
 # Check if all required arguments are provided
 if not args.folder or not args.token or not args.persistent_id or not args.server_url:
     print("Error: Missing arguments.")
+    if not args.folder:
+        print("Missing argument: -f FOLDER")
+    if not args.token:
+        print("Missing argument: -t API_TOKEN")
+    if not args.persistent_id:
+        print("Missing argument: -p PERSISTENT_ID")
+    if not args.server_url:
+        print("Missing argument: -u SERVER_URL")
     show_help()
 
 # Process SERVER_URL to ensure it has the correct protocol
@@ -234,7 +249,17 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
     }
     lock_url = f"{server_url}/api/datasets/{dataset_id}/locks"
     while True:
-        lock_list_response = requests.get(lock_url, headers=headers)
+        try:
+            lock_list_response = requests.get(lock_url, headers=headers, timeout=15)
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error: {e}")
+        except requests.exceptions.ConnectionError as e:
+            print(f"Connection error: {e}")
+        except requests.exceptions.Timeout as e:
+            print(f"Timeout error: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error: {e}")
+
         dataset_locks = lock_list_response.json()
         
         if dataset_locks['data'] == []:
@@ -248,7 +273,7 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
             time.sleep(5)
             print('Trying again...')
 
-def main():
+def main(loop_number=0):
     try:
         files_array = get_files_array(args.folder)
         # Iterate 10 items in files_array at a time.
@@ -293,6 +318,11 @@ def get_list_of_files_already_online():
     first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
     response = requests.get(first_url_call, headers=headers)
     data = response.json()
+
+    if 'status' in data and data['status'] == 'ERROR' and data['message'] == 'Bad api key ':
+        print('Bad api key. Exiting program.')
+        sys.exit(1)
+
     dataset_id = data['data']['id']
     check_and_unlock_dataset(args.server_url, dataset_id, args.token)
     # Get the list of files already online
