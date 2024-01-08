@@ -41,6 +41,7 @@ from mimetype_description import guess_mime_type, get_mime_type_description
 import hashlib
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+files_per_batch = 50
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
@@ -49,7 +50,6 @@ parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset
 
 def get_dataset_info(server_url, persistent_id):
     """Get the dataset info from the Dataverse server."""
-    # Get the dataset ID # of the DOI
     api = pyDataverse.api.NativeApi(server_url)
     response = api.get_dataset(persistent_id)
     if response.status_code == 200:
@@ -60,7 +60,6 @@ def get_dataset_info(server_url, persistent_id):
 parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
 args = parser.parse_args()
 
-# Get the dataset ID # of the DOI
 dataset_info = get_dataset_info(args.server_url, args.persistent_id)
 dataset_id = dataset_info["data"]["id"]
 
@@ -88,10 +87,28 @@ def show_help():
 def get_files_array(directory):
     files = []
     for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
         # If file is hidden or starts with a period, skip it
         if filename.startswith("."):
             print(f"Skipping hidden file: {filename}")
             continue
+        # Get the MD5 hash of the file
+        # The following code is from https://stackoverflow.com/a/3431838
+        with open(file_path, 'rb') as fh:
+            # Print the file path to the console on the same line as the MD5 hash
+            print(f" Calculating MD5 hash for {file_path}..................... .", end="\r")
+            file_hash = hashlib.md5()
+            while True:
+                hash_data = fh.read(8192)
+                if not hash_data:
+                    break
+                file_hash.update(hash_data)
+        directory_label = ""
+        # File hash is already online, so skip it
+        if check_if_hash_is_online(file_hash.hexdigest()):
+            print(f"Skipping file {file_path} because it is already online.")
+            continue
+
         mimeType = guess_mime_type(os.path.join(directory, filename))
 
         # Manual overrides
@@ -135,22 +152,8 @@ def get_files_array(directory):
                 mimeType = "application/xml"
             if filename.endswith(".qix"):
                 mimeType = "x-gis/x-shapefile"
-
-        file_path = os.path.join(directory, filename)
         file_name_without_extension = os.path.splitext(filename)[0]
         description = f"This file's name is '{file_name_without_extension}' and is a fits file."
-        # Get the MD5 hash of the file
-        # The following code is from https://stackoverflow.com/a/3431838
-        with open(file_path, 'rb') as fh:
-            # Print the file path to the console on the same line as the MD5 hash
-            print(f" Calculating MD5 hash for {file_path}..................... .", end="\r")
-            file_hash = hashlib.md5()
-            while True:
-                hash_data = fh.read(8192)
-                if not hash_data:
-                    break
-                file_hash.update(hash_data)
-        directory_label = ""
         file_dict = {
             "directoryLabel": directory_label,
             "filepath": file_path,
@@ -158,10 +161,6 @@ def get_files_array(directory):
             "description": description,
             "hash": file_hash.hexdigest()
         }
-        # File hash is already online, so skip it
-        if check_if_hash_is_online(file_hash.hexdigest()):
-            print(f"Skipping file {file_path} because it is already online.")
-            continue
         files.append(file_dict)
     print(" Calculating MD5 hash .............................................. Done.")
     # Sort the files array by file name in reverse order
@@ -171,6 +170,9 @@ def get_files_array(directory):
         # Check that the files_sorted array is not empty
         if files_sorted:
             json.dump(files_sorted, outfile)
+        else:
+            print("Error: files_sorted array is empty.")
+            sys.exit(1)
     print("")
     return files_sorted
 
@@ -223,23 +225,20 @@ def requests_retry_session(
     session.mount('https://', adapter)
     return session
 
-# add a loop number to the upload_file function to try again if it fails
 def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
     try:
         dvuploader = DVUploader(files=files)
         print("Uploading files...")
-        # Print all of the dvuploader.upload functions available
-        # redirect dvuploader_log to standard output
         dvuploader.upload(
             api_token=args.token,
             dataverse_url=args.server_url,
             persistent_id=args.persistent_id,
+            n_jobs=files_per_batch,
         )
     except Exception as e:
         print(f"An error occurred: {e}")
         print('Trying again in 10 seconds...')
         time.sleep(10)
-        # if the loop_number is greater than 5, then exit the program
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
@@ -302,19 +301,13 @@ def main(loop_number=0, start_time=None, time_per_batch=None):
     try:
         files_array = get_files_array(args.folder)
         total_files = len(files_array)
-        files_per_batch = 10
-
-        # Iterate 10 items in files_array at a time.
-        # This is to avoid the "too many files open" error
-        # when uploading a large number of files.
-        for i in range(0, len(files_array), 10):
+        for i in range(0, len(files_array), files_per_batch):
             batch_start_time = time.time()
-            if i + 10 > len(files_array):
+            if i + files_per_batch > len(files_array):
                 files = files_array[i:]
             else:
                 files = files_array[i:i+10]
-            # Print the range of files being uploaded and how many are left
-            print(f"Uploading files {i} to {i+10}... {len(files_array) - i - 10}")
+            print(f"Uploading files {i} to {i+files_per_batch}... {len(files_array) - i - files_per_batch}")
             headers = {
                 "X-Dataverse-key": args.token
             }
@@ -323,7 +316,6 @@ def main(loop_number=0, start_time=None, time_per_batch=None):
             data = response.json()
             dataset_id = data['data']['id']
             check_and_unlock_dataset(args.server_url, dataset_id, args.token)
-            # Pipe the output of the upload_file function to a variable
             upload_file(args.token, args.server_url, args.persistent_id, files)
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
@@ -375,25 +367,19 @@ def get_list_of_files_already_online():
     for file in full_data['data']:
         files_already_online.append(file['dataFile'])
     print(f"Found {len(files_already_online)} files for this DOI online.")
-    # Write the files_already_online.json array to a file for debugging purposes
     with open('files_already_online.json', 'w') as outfile:
         json.dump(files_already_online, outfile)
     return files_already_online
 
 def check_list_of_files_already_online_compared_to_local():
-    # Write get_list_of_files_already_online to a file for debugging purposes, the filename should be 
     original_str = args.persistent_id
-    # Replacing special characters (non-alphanumeric) with underscores
     modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
-    # This downloads the list of files already online and writes it to a file.
     list_of_hashes_online = get_list_of_files_already_online()
-    # If list_of_hashes_online is empty, then skip the json.dump
     if list_of_hashes_online:
         with open(modified_str, 'w') as outfile:
             json.dump(list_of_hashes_online, outfile)
             print(f"List of files already online written to {modified_str}")
     else:
-        # Print list_of_hashes_online to the console
         print(f"List of files already online is empty: {list_of_hashes_online}")
 
 if __name__ == "__main__":
