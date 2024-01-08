@@ -103,9 +103,11 @@ See [FITS_Description.md](FITS_Description.md) for details.
 ## Gotchas
 1. __Processing order__: there is no telling the order at which the system is reading in the files. It does sort alphabetically but that doesn't mean it will process them in that order. This is important to know because the order of the files is important to the user.
 1. __Subdirectories with FITS files__: if the directory has subdirectories we need to discuss the expected behavior and modify this code accordingly.
+1. __Large Number of files__: will cause the script to take a long time to run. Ingestion of data in Dataverse is currently handled natively within Java, using a single-threaded process that reads each cell, row by row, column by column. The performance of ingestion mainly depends on the clock speed of a single core.
 
 ## ToDos
 1. ~~Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.~~ ADDED
+1. Add the "FilePath" for utilizing a tree view of files.
 
 ## Troubleshooting
 
