@@ -30,7 +30,7 @@ python -m pip install pipenv
 brew install pyenv
 
 # Install Python 3.10.12 using pyenv
-pyenv install 3.10.12
+pipenv install 3.10.12
 
 # Create a virtual environment at a specific Python version
 pipenv --python 3.10.12
