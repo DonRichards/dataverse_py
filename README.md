@@ -29,8 +29,15 @@ python -m pip install pipenv
 # OR (Mac)
 brew install pyenv
 
+# Linux
+git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
+echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(pyenv init --path)"' >> ~/.bashrc
+source ~/.bashrc
+
 # Install Python 3.10.12 using pyenv
-pipenv install 3.10.12
+pyenv install 3.10.12
 
 # Create a virtual environment at a specific Python version
 pipenv --python 3.10.12
