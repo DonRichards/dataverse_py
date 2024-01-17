@@ -41,6 +41,8 @@ from mimetype_description import guess_mime_type, get_mime_type_description
 import hashlib
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import traceback
+
 files_per_batch = 50
 
 parser = argparse.ArgumentParser()
@@ -84,39 +86,73 @@ def show_help():
     print("")
     sys.exit(0)
 
-def get_files_array(directory):
+def hash_file(file_path, hash_algo="md5"):
+    """ Hash a single file and return the hash """
+    hash_func = getattr(hashlib, hash_algo)()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_func.update(chunk)
+    except IOError:
+        return file_path, None
+    return file_path, hash_func.hexdigest()
+
+def is_file_empty_or_brackets(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            content = file.read().strip()
+            return content == "" or content == "[]"
+    except FileNotFoundError:
+        print("File not found.")
+        return False
+
+def get_files_with_hashes_list(directory):
+    file_paths_unsorted = [os.path.join(directory, filename) for filename in os.listdir(directory) if not filename.startswith(".")]
+    file_paths = sorted(file_paths_unsorted, reverse=True)
+
+    print(f"Found {len(file_paths)} files in {directory}.")
+
+    if is_file_empty_or_brackets('file_hashes.json'):
+        print("Calculating hashes...")
+        results = {}
+        for file_path in file_paths:
+            file_path, file_hash = hash_file(file_path)
+            # Print on the same line
+            print(f" Hashing file {file_path}... ", end="\r")
+            while file_hash is None:
+                print(f"File {file_path} is empty. Trying again...")
+                hash_file(file_path)
+            results[file_path] = file_hash
+        print("")
+
+        with open('file_hashes.json', 'w') as f:
+            json.dump(results, f, indent=4)
+    else:
+        print("Reading file_hashes.json...")
+        with open('file_hashes.json') as json_file:
+            data = json.load(json_file)
+            results = list(data.items())
+    print(f"Completed hashing {len(results)} files.")
+    return results
+
+def set_files_and_mimetype_to_exported_file(results):
+    print("Setting files and mimetypes...")
+    directory = args.folder
     files = []
-    for filename in os.listdir(directory):
-        file_path = os.path.join(directory, filename)
-        # If file is hidden or starts with a period, skip it
-        if filename.startswith("."):
-            print(f"Skipping hidden file: {filename}")
+    for file_path, file_hash in results:
+        print(f" Setting file {file_path}... ", end="\r")
+        if file_hash is None or file_hash == "":
             continue
-        # Get the MD5 hash of the file
-        # The following code is from https://stackoverflow.com/a/3431838
-        with open(file_path, 'rb') as fh:
-            # Print the file path to the console on the same line as the MD5 hash
-            print(f" Calculating MD5 hash for {file_path}..................... .", end="\r")
-            file_hash = hashlib.md5()
-            while True:
-                hash_data = fh.read(8192)
-                if not hash_data:
-                    break
-                file_hash.update(hash_data)
-        directory_label = ""
-        # File hash is already online, so skip it
-        if check_if_hash_is_online(file_hash.hexdigest()):
-            print(f"Skipping file {file_path} because it is already online.")
+        if file_path is None or file_path == "":
             continue
-
-        mimeType = guess_mime_type(os.path.join(directory, filename))
-
-        # Manual overrides
+        if check_if_hash_is_online(file_hash):
+            print(f"File with hash {file_hash} is already online. Skipping...")
+            continue
+        mimeType = guess_mime_type(os.path.join(directory, file_path))
         if mimeType == "application/fits":
             mimeType = "image/fits"
 
-        # If mimeType is "None", then set mimeType based on file extension
-        # or if the type of variable is a nonetype (Shape Files)
+        filename = os.path.basename(file_path)
         if mimeType == "None" or type(mimeType) == type(None) or mimeType == "":
             # Start with setting the default to a binary file and change as needed.
             mimeType = "application/octet-stream"
@@ -152,29 +188,27 @@ def get_files_array(directory):
                 mimeType = "application/xml"
             if filename.endswith(".qix"):
                 mimeType = "x-gis/x-shapefile"
-        file_name_without_extension = os.path.splitext(filename)[0]
+        file_name_without_extension = os.path.splitext(file_path)[0]
+        directory_label = ""
         description = f"This file's name is '{file_name_without_extension}' and is a fits file."
+        # Check if file_hash and file_hash.hexdigest()
         file_dict = {
             "directoryLabel": directory_label,
             "filepath": file_path,
             "mimeType": mimeType,
             "description": description,
-            "hash": file_hash.hexdigest()
+            "hash": file_hash
         }
         files.append(file_dict)
-    print(" Calculating MD5 hash .............................................. Done.")
-    # Sort the files array by file name in reverse order
-    files_sorted = sorted(files, key=lambda k: k['filepath'], reverse=True)
     # Write the files array to a file for debugging purposes
-    with open('file_report.json', 'w') as outfile:
-        # Check that the files_sorted array is not empty
-        if files_sorted:
-            json.dump(files_sorted, outfile)
-        else:
-            print("Error: files_sorted array is empty.")
-            sys.exit(1)
+    # with open('file_hashes.json', 'w') as outfile:
+    #     if files:
+    #         json.dump(files, outfile, indent=4)
+    #     else:
+    #         print("Error: files array is empty.")
+    #         sys.exit(1)
     print("")
-    return files_sorted
+    return files
 
 # Check if all required arguments are provided
 if not args.folder or not args.token or not args.persistent_id or not args.server_url:
@@ -236,12 +270,11 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
             n_jobs=files_per_batch,
         )
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred with uploading: {e}")
         print('Trying again in 10 seconds...')
         time.sleep(10)
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
-            sys.exit(1)
         upload_file(api_token, dataverse_url, persistent_id, files, loop_number=loop_number+1)
     return True
 
@@ -282,7 +315,7 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
         dataset_locks = lock_list_response.json()
         
         if dataset_locks['data'] == []:
-            print('Dataset is unlocked. Continuing...')
+            print('Dataset is not locked...')
             break
         else:
             print('dataset_locks: ', dataset_locks)
@@ -297,17 +330,18 @@ def main(loop_number=0, start_time=None, time_per_batch=None):
         start_time = time.time()
     if time_per_batch is None:
         time_per_batch = []
-
     try:
-        files_array = get_files_array(args.folder)
-        total_files = len(files_array)
-        for i in range(0, len(files_array), files_per_batch):
+        files_array = get_files_with_hashes_list(args.folder)
+        print(f"Found {len(files_array)} files to upload.")
+        compiled_file_list = set_files_and_mimetype_to_exported_file(files_array)
+        total_files = len(compiled_file_list)
+        for i in range(0, len(compiled_file_list), files_per_batch):
             batch_start_time = time.time()
-            if i + files_per_batch > len(files_array):
-                files = files_array[i:]
+            if i + files_per_batch > len(compiled_file_list):
+                files = compiled_file_list[i:]
             else:
-                files = files_array[i:i+10]
-            print(f"Uploading files {i} to {i+files_per_batch}... {len(files_array) - i - files_per_batch}")
+                files = compiled_file_list[i:i+files_per_batch]
+            print(f"Uploading files {i} to {i+files_per_batch}... {len(compiled_file_list) - i - files_per_batch}")
             headers = {
                 "X-Dataverse-key": args.token
             }
@@ -327,9 +361,8 @@ def main(loop_number=0, start_time=None, time_per_batch=None):
             print(f"Uploading files {i} to {i+files_per_batch}... {total_files - i - files_per_batch} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
-        print('Trying again in 10 seconds...')
-        time.sleep(10)
+        print(f"An error occurred in Main(): {e}")
+        traceback.print_exc()
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
@@ -337,12 +370,12 @@ def main(loop_number=0, start_time=None, time_per_batch=None):
 
 def wipe_report():
     """
-    Wipe the file_report.json file.
+    Wipe the file_hashes.json file.
     """
-    with open('file_report.json', 'w') as outfile:
+    with open('file_hashes.json', 'w') as outfile:
         json.dump([], outfile)
 
-def get_list_of_files_already_online():
+def get_list_of_the_doi_files_online():
     """
     Get a list of files already online.
     """
@@ -363,30 +396,40 @@ def get_list_of_files_already_online():
     url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:latest/files"
     second_response = requests_retry_session().get(url, headers=headers)
     full_data = second_response.json()
-    files_already_online = []
+    files_online_for_this_doi = []
     for file in full_data['data']:
-        files_already_online.append(file['dataFile'])
-    print(f"Found {len(files_already_online)} files for this DOI online.")
-    with open('files_already_online.json', 'w') as outfile:
-        json.dump(files_already_online, outfile)
-    return files_already_online
+        files_online_for_this_doi.append(file['dataFile'])
+    print(f"Found {len(files_online_for_this_doi)} files for this DOI online.")
+    # with open('files_already_online.json', 'w') as outfile:
+    #     json.dump(files_online_for_this_doi, outfile)
+    return files_online_for_this_doi
 
-def check_list_of_files_already_online_compared_to_local():
+def check_all_local_hashes_are_online():
     original_str = args.persistent_id
-    modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
-    list_of_hashes_online = get_list_of_files_already_online()
-    if list_of_hashes_online:
-        with open(modified_str, 'w') as outfile:
-            json.dump(list_of_hashes_online, outfile)
-            print(f"List of files already online written to {modified_str}")
-    else:
-        print(f"List of files already online is empty: {list_of_hashes_online}")
+    check_list_modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
+    check_list_list_of_hashes_online = get_list_of_the_doi_files_online()
+    # turn the list of hashes from file into a list of hashes
+    with open('file_hashes.json') as json_file:
+        check_list_data = json.load(json_file)
+        check_list_online_hashes = []
+        for file in check_list_data:
+            check_list_online_hashes.append(file['hash'])
+    # If the file_hashes.json file is empty, then run the main function
+    if check_list_online_hashes == []:
+        return False
+    print(f"Found {len(check_list_online_hashes)} files locally.")
+    # Check that all of the hashes in the file_hashes.json file are in the list of hashes online
+    missing_files = []
+    for check_list_hash in check_list_online_hashes:
+        if check_list_hash not in check_list_list_of_hashes_online:
+            missing_files.append(check_list_hash)
+            return True
+    return False
 
 if __name__ == "__main__":
-    print("Get a list of files already for this dataset.")
-    check_list_of_files_already_online_compared_to_local()
-    print("Wiping file_report.json...")
+    print("Creating an empty json file of local file hashes...")
     wipe_report()
-    print("Starting main()...")
-    main()
+    while check_all_local_hashes_are_online() == False:
+        print("Identified that not all files were uploaded. Starting the upload process...")
+        main()
     print("Done.")
