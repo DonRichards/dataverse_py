@@ -43,12 +43,17 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import traceback
 
-files_per_batch = 50
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
 parser.add_argument("-t", "--token", help="API token for authentication.", required=True)
 parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset.", required=True)
+parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
+parser.add_argument("-b", "--files_per_batch", help="Number of files to upload per batch.", required=False)
+args = parser.parse_args()
+if args.files_per_batch is None:
+    files_per_batch = 20
+else:
+    files_per_batch = int(args.files_per_batch)
 
 def get_dataset_info(server_url, persistent_id):
     """Get the dataset info from the Dataverse server."""
@@ -58,9 +63,6 @@ def get_dataset_info(server_url, persistent_id):
         return response.json()
     else:
         raise Exception(f"Error retrieving dataset: {response.json()['message']}")
-
-parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
-args = parser.parse_args()
 
 dataset_info = get_dataset_info(args.server_url, args.persistent_id)
 dataset_id = dataset_info["data"]["id"]
@@ -139,6 +141,11 @@ def set_files_and_mimetype_to_exported_file(results):
     print("Setting files and mimetypes...")
     directory = args.folder
     files = []
+
+    # Odd bug on first load.
+    if type(results) == type({}):
+        results = list(results.items())
+
     for file_path, file_hash in results:
         print(f" Setting file {file_path}... ", end="\r")
         if file_hash is None or file_hash == "":
@@ -326,11 +333,11 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
             print('Trying again...')
 
 def main(loop_number=0, start_time=None, time_per_batch=None):
-    if start_time is None:
-        start_time = time.time()
-    if time_per_batch is None:
-        time_per_batch = []
     try:
+        if start_time is None:
+            start_time = time.time()
+        if time_per_batch is None:
+            time_per_batch = []
         files_array = get_files_with_hashes_list(args.folder)
         print(f"Found {len(files_array)} files to upload.")
         compiled_file_list = set_files_and_mimetype_to_exported_file(files_array)
@@ -429,6 +436,8 @@ def check_all_local_hashes_are_online():
 if __name__ == "__main__":
     print("Creating an empty json file of local file hashes...")
     wipe_report()
+    print("Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
+    print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
     while check_all_local_hashes_are_online() == False:
         print("Identified that not all files were uploaded. Starting the upload process...")
         main()
