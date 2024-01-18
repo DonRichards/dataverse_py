@@ -42,6 +42,7 @@ import hashlib
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import traceback
+import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
@@ -55,9 +56,16 @@ if args.files_per_batch is None:
 else:
     files_per_batch = int(args.files_per_batch)
 
-original_str = args.persistent_id
-modified_str = ''.join(['_' if not c.isalnum() else c for c in original_str]) + '.json'
-local_json_file_with_local_fs_hashes = 'file_hashes.json'
+original_doi_str = args.persistent_id
+modified_doi_str = ''.join(['_' if not c.isalnum() else c for c in original_doi_str]) + '.json'
+
+def sanitize_folder_path(folder_path):
+    folder_path = folder_path.rstrip('/').lstrip('./').lstrip('/')
+    sanitized_name = re.sub(r'[^\w\-\.]', '_', folder_path)
+    return sanitized_name
+
+sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
+local_json_file_with_local_fs_hashes = sanitized_filename + '.json'
 
 def get_dataset_info(server_url, persistent_id):
     """Get the dataset info from the Dataverse server."""
@@ -115,7 +123,6 @@ def is_file_empty_or_brackets(file_path):
 def get_files_with_hashes_list(directory):
     file_paths_unsorted = [os.path.join(directory, filename) for filename in os.listdir(directory) if not filename.startswith(".")]
     file_paths = sorted(file_paths_unsorted, reverse=True)
-    print(f"Found {len(file_paths)} files in {directory}.")
     if is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
         print("Calculating hashes...")
         results = {}
@@ -133,10 +140,11 @@ def get_files_with_hashes_list(directory):
                 continue
             results[file_path] = file_hash
         print("")
+        print(f"Writing hashes to {local_json_file_with_local_fs_hashes}...")
         with open(local_json_file_with_local_fs_hashes, 'w') as f:
             json.dump(results, f, indent=4)
     else:
-        print("Reading file_hashes.json...")
+        print(f"Reading hashes from {local_json_file_with_local_fs_hashes}...")
         with open(local_json_file_with_local_fs_hashes) as json_file:
             data = json.load(json_file)
             old_results = list(data.items())
@@ -296,7 +304,7 @@ def check_if_hash_is_online(file_hash):
     Checks if the file hash is already online.
     """
     # Open the json file containing the list of files and thier "md5" hashes and check if the file_hash is in the list
-    with open(modified_str) as json_file:
+    with open(modified_doi_str) as json_file:
         data = json.load(json_file)
         for file in data:
             if file_hash in file.values():
@@ -343,7 +351,6 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
         if time_per_batch is None:
             time_per_batch = []
         local_fs_files_array = get_files_with_hashes_list(args.folder)
-        print(f"Found {len(local_fs_files_array)} files to upload.")
         compiled_file_list = set_files_and_mimetype_to_exported_file(local_fs_files_array)
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
@@ -387,7 +394,7 @@ def wipe_report():
     """
     with open(local_json_file_with_local_fs_hashes, 'w') as outfile:
         json.dump([], outfile)
-    with open(modified_str, 'w') as second_outfile:
+    with open(modified_doi_str, 'w') as second_outfile:
         json.dump([], second_outfile)
 
 def get_list_of_the_doi_files_online():
@@ -418,7 +425,7 @@ def get_list_of_the_doi_files_online():
     print(f"Found {len(files_online_for_this_doi)} files for this DOI online.")
     print("")
     print("Writing the list of files to file_hashes.json...")
-    with open(modified_str, 'w') as outfile:
+    with open(modified_doi_str, 'w') as outfile:
         json.dump(files_online_for_this_doi, outfile)
     return files_online_for_this_doi
 
