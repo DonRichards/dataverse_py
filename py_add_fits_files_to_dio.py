@@ -152,7 +152,8 @@ def get_files_with_hashes_list(directory):
     return results
 
 def set_files_and_mimetype_to_exported_file(results):
-    print("Setting files and mimetypes...")
+    print("Setting file definitions with mimetypes & metadata together...")
+    print("This will likely take a while.")
     directory = args.folder
     files = []
 
@@ -161,13 +162,12 @@ def set_files_and_mimetype_to_exported_file(results):
         results = list(results.items())
 
     for file_path, file_hash in results:
-        print(f" Setting file {file_path}... ", end="\r")
+        # print(f" Setting file {file_path}... ", end="\r")
         if file_hash is None or file_hash == "":
+            print(f" Hash for file {file_path} is empty... ", end="\r")
             continue
         if file_path is None or file_path == "":
-            continue
-        if check_if_hash_is_online(file_hash):
-            print(f"File with hash {file_hash} is already online. Skipping...")
+            print(f" File path for file {file_path} is empty... ", end="\r")
             continue
         mimeType = guess_mime_type(os.path.join(directory, file_path))
         if mimeType == "application/fits":
@@ -212,7 +212,6 @@ def set_files_and_mimetype_to_exported_file(results):
         file_name_without_extension = os.path.splitext(file_path)[0]
         directory_label = ""
         description = f"This file's name is '{file_name_without_extension}' and is a fits file."
-        # Check if file_hash and file_hash.hexdigest()
         file_dict = {
             "directoryLabel": directory_label,
             "filepath": file_path,
@@ -221,13 +220,6 @@ def set_files_and_mimetype_to_exported_file(results):
             "hash": file_hash
         }
         files.append(file_dict)
-    # Write the files array to a file for debugging purposes
-    # with open(local_json_file_with_local_fs_hashes, 'w') as outfile:
-    #     if files:
-    #         json.dump(files, outfile, indent=4)
-    #     else:
-    #         print("Error: files array is empty.")
-    #         sys.exit(1)
     print("")
     return files
 
