@@ -50,6 +50,8 @@ parser.add_argument("-t", "--token", help="API token for authentication.", requi
 parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset.", required=True)
 parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
 parser.add_argument("-b", "--files_per_batch", help="Number of files to upload per batch.", required=False)
+parser.add_argument("-w", "--wipe", help="Wipe the file hashes json file.", action='store_true', required=False)
+
 args = parser.parse_args()
 if args.files_per_batch is None:
     files_per_batch = 20
@@ -95,6 +97,8 @@ def show_help():
     print("  -t API_TOKEN      API token for authentication.")
     print("  -p PERSISTENT_ID  Persistent ID for the dataset.")
     print("  -u SERVER_URL     URL of the Dataverse server.")
+    print("  -b FILES_PER_BATCH Number of files to upload per batch.")
+    print("  -w WIPE           Wipe the file hashes json file.")
     print("  -h                Display this help message.")
     print("Example: {} -f 'sample_fits/' -t 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' -p 'doi:10.5072/FK2/J8SJZB' -u 'https://localhost:8080'".format(sys.argv[0]))
     print("")
@@ -148,7 +152,7 @@ def get_files_with_hashes_list(directory):
         with open(local_json_file_with_local_fs_hashes) as json_file:
             data = json.load(json_file)
             old_results = list(data.items())
-            # check if the file is already online
+            # Check if the file is already online.
             results = {}
             for file_path, file_hash in old_results:
                 if check_if_hash_is_online(file_hash):
@@ -449,14 +453,20 @@ def get_all_local_hashes_that_are_not_online():
     return False
 
 if __name__ == "__main__":
-    print("Creating an empty json file of local file hashes...")
-    wipe_report()
-    print("")
+    if args.wipe and os.path.isfile(local_json_file_with_local_fs_hashes):
+        print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
+        wipe_report()
+        print("")
+    else:
+        print(f"Reading hashes from {local_json_file_with_local_fs_hashes} ...")
+
     if files_per_batch != 20:
         print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
+
     while get_all_local_hashes_that_are_not_online() is not False:
         print("Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
         print("Identified that not all files were uploaded. Starting the upload process...")
         main()
         time.sleep(5)
+
     print("Done.")
