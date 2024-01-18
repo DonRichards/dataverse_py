@@ -60,7 +60,7 @@ pipenv --rm
 
 #### Install libraries (locally)
 ```shell
-python -m pip install dvuploader pyDataverse mimetype-description
+python -m pip install dvuploader pyDataverse mimetype-description shutil grequests requests
 
 # Optional Packages (for the fits_extract.py script)
 python -m pip install astropy
