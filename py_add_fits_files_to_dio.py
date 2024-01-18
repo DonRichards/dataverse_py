@@ -405,6 +405,7 @@ def get_list_of_the_doi_files_online():
     headers = {
         "X-Dataverse-key": args.token
     }
+    print("Getting the list of files online for this DOI...")
     first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
     response = requests_retry_session().get(first_url_call, headers=headers)
     data = response.json()
@@ -452,7 +453,8 @@ if __name__ == "__main__":
     print("Creating an empty json file of local file hashes...")
     wipe_report()
     print("")
-    print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
+    if files_per_batch != 20:
+        print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
     while get_all_local_hashes_that_are_not_online() is not False:
         print("Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
         print("Identified that not all files were uploaded. Starting the upload process...")
