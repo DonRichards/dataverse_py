@@ -134,7 +134,7 @@ def get_files_with_hashes_list(directory):
         results = {}
         for file_path in file_paths:
             file_path, file_hash = hash_file(file_path)
-            if args.display is False:
+            if args.display:
                 print(f" Hashing file {file_path}... ", end="\r")
             while file_hash is None:
                 print(f"File {file_path} is empty. Trying again...")
@@ -142,7 +142,7 @@ def get_files_with_hashes_list(directory):
                 file_path, file_hash = hash_file(file_path)
             # if file_hash exist in the online list of hashes then skip
             if check_if_hash_is_online(file_hash):
-                if args.display is False:
+                if args.display:
                     print(f"File with hash {file_hash} is already online. Skipping...")
                 continue
             results[file_path] = file_hash
@@ -159,7 +159,7 @@ def get_files_with_hashes_list(directory):
             results = {}
             for file_path, file_hash in old_results:
                 if check_if_hash_is_online(file_hash):
-                    if args.display is False:
+                    if args.display:
                         print(f"File with hash {file_hash} is already online. Skipping...")
                     continue
                 results[file_path] = file_hash
@@ -178,7 +178,7 @@ def set_files_and_mimetype_to_exported_file(results):
         results = list(results.items())
 
     for file_path, file_hash in results:
-        if args.display is False:
+        if args.display:
             print(f" Setting file {file_path}... ", end="\r")
         if file_hash is None or file_hash == "":
             print(f" Hash for file {file_path} is empty... ", end="\r")
@@ -451,7 +451,7 @@ def get_all_local_hashes_that_are_not_online():
         for file_path, file_hash in check_list_data.items():
             if file_hash not in check_list_list_of_hashes_online:
                 missing_files.append(file_path)
-                if args.display is False:
+                if args.display:
                     print(f"File with hash {file_hash} is not online.")
     if missing_files != []:
         print(f"Found {len(missing_files)} files locally missing from the DOI.")
@@ -459,10 +459,10 @@ def get_all_local_hashes_that_are_not_online():
     return False
 
 if __name__ == "__main__":
-    if args.display is False:
-        print("Hiding of hashing progress is turned on.")
-    else:
+    if args.display:
         print("Hiding of hashing progress is turned off.")
+    else:
+        print("Hiding of hashing progress is turned on.")
 
     if args.wipe and os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
