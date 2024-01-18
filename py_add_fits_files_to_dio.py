@@ -51,7 +51,7 @@ parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset
 parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
 parser.add_argument("-b", "--files_per_batch", help="Number of files to upload per batch.", required=False)
 parser.add_argument("-w", "--wipe", help="Wipe the file hashes json file.", action='store_true', required=False)
-parser.add_argument("-d", "--display", help="Hide the display progress.", action='store_false', required=False)
+parser.add_argument("-d", "--display", help="Hide the display progress.", action='store_true', required=False)
 
 args = parser.parse_args()
 if args.files_per_batch is None:
@@ -100,6 +100,7 @@ def show_help():
     print("  -u SERVER_URL     URL of the Dataverse server.")
     print("  -b FILES_PER_BATCH Number of files to upload per batch.")
     print("  -w WIPE           Wipe the file hashes json file.")
+    print("  -d DISPLAY        Hide the display progress.")
     print("  -h                Display this help message.")
     print("Example: {} -f 'sample_fits/' -t 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' -p 'doi:10.5072/FK2/J8SJZB' -u 'https://localhost:8080'".format(sys.argv[0]))
     print("")
@@ -133,7 +134,7 @@ def get_files_with_hashes_list(directory):
         results = {}
         for file_path in file_paths:
             file_path, file_hash = hash_file(file_path)
-            if args.display is False:
+            if args.display:
                 print(f" Hashing file {file_path}... ", end="\r")
             while file_hash is None:
                 print(f"File {file_path} is empty. Trying again...")
@@ -141,7 +142,7 @@ def get_files_with_hashes_list(directory):
                 file_path, file_hash = hash_file(file_path)
             # if file_hash exist in the online list of hashes then skip
             if check_if_hash_is_online(file_hash):
-                if args.display is False:
+                if args.display:
                     print(f"File with hash {file_hash} is already online. Skipping...")
                 continue
             results[file_path] = file_hash
@@ -158,7 +159,7 @@ def get_files_with_hashes_list(directory):
             results = {}
             for file_path, file_hash in old_results:
                 if check_if_hash_is_online(file_hash):
-                    if args.display is False:
+                    if args.display:
                         print(f"File with hash {file_hash} is already online. Skipping...")
                     continue
                 results[file_path] = file_hash
@@ -177,7 +178,7 @@ def set_files_and_mimetype_to_exported_file(results):
         results = list(results.items())
 
     for file_path, file_hash in results:
-        if args.display is False:
+        if args.display:
             print(f" Setting file {file_path}... ", end="\r")
         if file_hash is None or file_hash == "":
             print(f" Hash for file {file_path} is empty... ", end="\r")
@@ -450,7 +451,7 @@ def get_all_local_hashes_that_are_not_online():
         for file_path, file_hash in check_list_data.items():
             if file_hash not in check_list_list_of_hashes_online:
                 missing_files.append(file_path)
-                if args.display is False:
+                if args.display:
                     print(f"File with hash {file_hash} is not online.")
     if missing_files != []:
         print(f"Found {len(missing_files)} files locally missing from the DOI.")
@@ -458,8 +459,10 @@ def get_all_local_hashes_that_are_not_online():
     return False
 
 if __name__ == "__main__":
-    if args.display is False:
-        print("Display of hashing progress is turned on.")
+    if args.display:
+        print("Hiding of hashing progress is turned on.")
+    else:
+        print("Hiding of hashing progress is turned off.")
 
     if args.wipe and os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
