@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import shutil
 import argparse
 import os
 import random
@@ -20,8 +21,7 @@ def create_text_files(num_files, file_type, directory):
         if file_type == "fits":
             # Copy sample fits file to new file (filepath)
             sample_fits_file = os.path.join(os.path.dirname(__file__), "sample_fits/1904-66_CSC.fits")
-            os.system(f"cp {sample_fits_file} {filepath}")
-            # Update primary header
+            shutil.copyfile(sample_fits_file, filepath)
             with fits.open(filepath, mode='update') as hdul:
                 hdr = hdul[0].header
                 hdr['comment'] = "This is a sample FITS file " + str(i) + "." + str(filepath)

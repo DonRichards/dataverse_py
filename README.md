@@ -2,7 +2,6 @@
 Script to automate the process of adding potentially thousands of ~~FITS~~ files to a simple DOI within a Dataverse server. The mimetypes is automatically detected and the appropriate metadata is extracted and added to the description of the DOI. If the mine type is not recognized, the script will assign it as a binary file (_application/octet-stream_) to prevent upload failure. Several [shape files mime types](https://en.wikipedia.org/wiki/Shapefile) are included in the script (_application/x-esri-shape_ & _application/x-qgis_) but more can be added as needed.
 
 ### Files
-1. __dd_fits_files_to_doi.sh__: Original bash file. see below
 1. __py_add_fits_files_to_dio.py__: Rewrote Bash script behavior. see below
 1. __fits_extract.py__: Extract FITS metadata. see below
 1. __FITS_Description.md__: Describe FITS files and what is possible to extract. see below
@@ -26,9 +25,16 @@ Found that using __pyDataverse.api__ added options that would have been difficul
 Install [pipenv](https://pipenv.pypa.io/en/latest/installation.html) to simplifying dependency management and providing consistent environments across different installations and it should avoid version conflicts with libraries already installed.
 ```shell
 # Install pipenv (Linux)
-python3 -m pip install pipenv
+python -m pip install pipenv
 # OR (Mac)
 brew install pyenv
+
+# Linux
+git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
+echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(pyenv init --path)"' >> ~/.bashrc
+source ~/.bashrc
 
 # Install Python 3.10.12 using pyenv
 pyenv install 3.10.12
@@ -38,7 +44,7 @@ pipenv --python 3.10.12
 
 # 2 Ways to install packages into the virtual environment.
 # Either manually install packages into the virtual environment.
-pipenv install dvuploader pyDataverse mimetype-description astropy
+pipenv install dvuploader pyDataverse mimetype-description astropy shutil grequests requests
 # OR use the Pipfile files (preferred).
 # This is useful for ensuring consistent environments across different installations.
 pipenv install
@@ -54,10 +60,10 @@ pipenv --rm
 
 #### Install libraries (locally)
 ```shell
-python3 -m pip install dvuploader pyDataverse mimetype-description
+python -m pip install dvuploader pyDataverse mimetype-description shutil grequests requests
 
 # Optional Packages (for the fits_extract.py script)
-python3 -m pip install astropy
+python -m pip install astropy
 ```
 
 __Note__: "_./_" is a shorthand notation used by the computer to specify the execution of a file, especially when the file itself indicates that it's a Python script. In simpler terms, "_python foo.py_" and "_./foo.py_" essentially perform the same action.
@@ -102,11 +108,20 @@ See [mimetype.md](mimetype.md) for details.
 See [FITS_Description.md](FITS_Description.md) for details.
 
 ## Gotchas
-1. __Processing order__: there is no telling the order at which the system is reading in the files. If sorting them alphabetically or be creation date is needed please let me know.
+1. __Processing order__: there is no telling the order at which the system is reading in the files. It does sort alphabetically but that doesn't mean it will process them in that order. This is important to know because the order of the files is important to the user.
 1. __Subdirectories with FITS files__: if the directory has subdirectories we need to discuss the expected behavior and modify this code accordingly.
+1. __Large Number of files__: will cause the script to take a long time to run. Ingestion of data in Dataverse is currently handled natively within Java, using a single-threaded process that reads each cell, row by row, column by column. The performance of ingestion mainly depends on the clock speed of a single core.
 
 ## ToDos
 1. ~~Expand its capabilities to include more than just FITS files. This entails identifying the appropriate mimetypes and processing the files accordingly. While this enhancement wouldn't require significant effort, it may not provide immediate value to anyone.~~ ADDED
+1. Add the "FilePath" for utilizing a tree view of files.
+
+## Troubleshooting
+
+- error:
+  - `SystemError: (libev) error creating signal/async pipe: Too many open files`
+- solution (for Mac & Linux):
+  - `ulimit -n 4096`
 
 ## References
 1. [Sample FITS File](https://open-bitbucket.nrao.edu/projects/CASA/repos/casatestdata/browse/fits/1904-66_CSC.fits)
