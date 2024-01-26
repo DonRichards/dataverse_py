@@ -228,7 +228,7 @@ def set_files_and_mimetype_to_exported_file(results):
                 mimeType = "x-gis/x-shapefile"
         file_name_without_extension = os.path.splitext(file_path)[0]
         directory_label = ""
-        description = f"This file's name is '{file_name_without_extension}' and is a fits file."
+        description = f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {file_name_without_extension}."
         file_dict = {
             "directoryLabel": directory_label,
             "filepath": file_path,
