@@ -435,7 +435,7 @@ def get_all_local_hashes_that_are_not_online():
     # turn the list of hashes from file into a list of hashes
     missing_files = []
     # If the local_json_file_with_local_fs_hashes is empty then run get_files_with_hashes_list(args.folder) to create the file_hashes.json file
-    if is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
+    if not os.path.isfile(local_json_file_with_local_fs_hashes) or is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
         get_files_with_hashes_list(args.folder)
     with open(local_json_file_with_local_fs_hashes) as json_file:
         check_list_data = json.load(json_file)
