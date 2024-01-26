@@ -70,10 +70,10 @@ def sanitize_folder_path(folder_path):
 sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
 local_json_file_with_local_fs_hashes = sanitized_filename + '.json'
 
-def get_dataset_info(server_url, persistent_id):
-    """Get the dataset info from the Dataverse server."""
-    api = pyDataverse.api.NativeApi(server_url)
-    response = api.get_dataset(persistent_id)
+# Use for testing if connection to Dataverse server is successful
+def get_dataset_info(base_url, doi, token=args.token):
+    api = pyDataverse.api.NativeApi(base_url, api_token=token)
+    response = api.get_dataset(doi)
     if response.status_code == 200:
         return response.json()
     else:
@@ -260,15 +260,6 @@ if re.match("^http://", args.server_url):
 elif not re.match("^https://", args.server_url):
     # Add "https://" if no protocol is specified
     args.server_url = "https://{}".format(args.server_url)
-
-# Use for testing if connection to Dataverse server is successful
-def get_dataset_info(base_url, doi):
-    api = pyDataverse.api.NativeApi(base_url)
-    response = api.get_dataset(doi)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Error retrieving dataset: {response.json()['message']}")
 
 def requests_retry_session(
     retries=3,
