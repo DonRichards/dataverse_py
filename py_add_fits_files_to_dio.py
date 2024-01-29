@@ -68,7 +68,7 @@ def sanitize_folder_path(folder_path):
     return sanitized_name
 
 sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
-local_json_file_with_local_fs_hashes = sanitized_filename + '.json'
+local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info(base_url, doi, token=args.token):
@@ -119,9 +119,8 @@ def hash_file(file_path, hash_algo="md5"):
 
 def is_file_empty_or_brackets(file_path):
     """ Check if the file is empty or contains only brackets or doesn't exist."""
+    print(f"Checking if {file_path} is empty...")
     try:
-        if not os.path.isfile(file_path):
-            return False
         with open(file_path, 'r') as file:
             content = file.read().strip()
             return content == "" or content == "[]"
@@ -132,7 +131,8 @@ def is_file_empty_or_brackets(file_path):
 def get_files_with_hashes_list(directory):
     file_paths_unsorted = [os.path.join(directory, filename) for filename in os.listdir(directory) if not filename.startswith(".")]
     file_paths = sorted(file_paths_unsorted, reverse=True)
-    if is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
+    file_hashes_exist = is_file_empty_or_brackets(local_json_file_with_local_fs_hashes)
+    if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
         for file_path in file_paths:
