@@ -118,7 +118,10 @@ def hash_file(file_path, hash_algo="md5"):
     return file_path, hash_func.hexdigest()
 
 def is_file_empty_or_brackets(file_path):
+    """ Check if the file is empty or contains only brackets or doesn't exist."""
     try:
+        if not os.path.isfile(file_path):
+            return False
         with open(file_path, 'r') as file:
             content = file.read().strip()
             return content == "" or content == "[]"
