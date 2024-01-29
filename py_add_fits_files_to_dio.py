@@ -140,7 +140,7 @@ def get_files_with_hashes_list():
             if args.display:
                 print(f" Hashing file {file_path}... ", end="\r")
             while file_hash is None:
-                print(f"File {file_path} is empty. Trying again...")
+                print(f" File {file_path} is empty. Trying again... ", end="\r")
                 hash_file(file_path)
                 file_path, file_hash = hash_file(file_path)
             # if file_hash exist in the online list of hashes then skip
@@ -173,7 +173,6 @@ def get_files_with_hashes_list():
 def set_files_and_mimetype_to_exported_file(results):
     print("Setting file definitions with mimetypes & metadata together...")
     print("This will likely take a while.")
-    directory = args.folder
     files = []
 
     # Odd bug on first load.
@@ -189,7 +188,7 @@ def set_files_and_mimetype_to_exported_file(results):
         if file_path is None or file_path == "":
             print(f" File path for file {file_path} is empty... ", end="\r")
             continue
-        mimeType = guess_mime_type(os.path.join(directory, file_path))
+        mimeType = guess_mime_type(os.path.join(args.folder, file_path))
         if mimeType == "application/fits":
             mimeType = "image/fits"
 
@@ -460,7 +459,7 @@ if __name__ == "__main__":
     else:
         print("Hiding of hashing progress is turned on.")
 
-    if args.wipe and os.path.isfile(local_json_file_with_local_fs_hashes):
+    if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
         wipe_report()
         print("")
