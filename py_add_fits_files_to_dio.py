@@ -129,9 +129,13 @@ def is_file_empty_or_brackets(file_path):
         return False
 
 def get_files_with_hashes_list():
-    file_paths_unsorted = [os.path.join(args.folder, filename) for filename in os.listdir(args.folder) if not filename.startswith(".")]
+    try:
+        file_paths_unsorted = [os.path.join(args.folder, filename) for filename in os.listdir(args.folder) if not filename.startswith(".")]
+    except Exception as e:
+        print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
     file_hashes_exist = is_file_empty_or_brackets(local_json_file_with_local_fs_hashes)
+    print(f"Found {len(file_paths)} files in {args.folder}.")
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
