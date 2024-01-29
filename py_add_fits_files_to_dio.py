@@ -128,8 +128,8 @@ def is_file_empty_or_brackets(file_path):
         print("File not found.")
         return False
 
-def get_files_with_hashes_list(directory):
-    file_paths_unsorted = [os.path.join(directory, filename) for filename in os.listdir(directory) if not filename.startswith(".")]
+def get_files_with_hashes_list():
+    file_paths_unsorted = [os.path.join(args.folder, filename) for filename in os.listdir(args.folder) if not filename.startswith(".")]
     file_paths = sorted(file_paths_unsorted, reverse=True)
     file_hashes_exist = is_file_empty_or_brackets(local_json_file_with_local_fs_hashes)
     if not file_hashes_exist:
@@ -353,7 +353,7 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
             start_time = time.time()
         if time_per_batch is None:
             time_per_batch = []
-        local_fs_files_array = get_files_with_hashes_list(args.folder)
+        local_fs_files_array = get_files_with_hashes_list()
         compiled_file_list = set_files_and_mimetype_to_exported_file(local_fs_files_array)
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
@@ -395,10 +395,12 @@ def wipe_report():
     """
     Wipe the file_hashes.json file.
     """
-    with open(local_json_file_with_local_fs_hashes, 'w') as outfile:
-        json.dump([], outfile)
-    with open(modified_doi_str, 'w') as second_outfile:
-        json.dump([], second_outfile)
+    if os.path.isfile(local_json_file_with_local_fs_hashes):
+        with open(local_json_file_with_local_fs_hashes, 'w') as outfile:
+            json.dump([], outfile)
+    if os.path.isfile(modified_doi_str):
+        with open(modified_doi_str, 'w') as second_outfile:
+            json.dump([], second_outfile)
 
 def get_list_of_the_doi_files_online():
     """
@@ -437,9 +439,9 @@ def get_all_local_hashes_that_are_not_online():
     check_list_list_of_hashes_online = get_list_of_the_doi_files_online()
     # turn the list of hashes from file into a list of hashes
     missing_files = []
-    # If the local_json_file_with_local_fs_hashes is empty then run get_files_with_hashes_list(args.folder) to create the file_hashes.json file
+    # If the local_json_file_with_local_fs_hashes is empty then run get_files_with_hashes_list() to create the file_hashes.json file
     if not os.path.isfile(local_json_file_with_local_fs_hashes) or is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
-        get_files_with_hashes_list(args.folder)
+        get_files_with_hashes_list()
     with open(local_json_file_with_local_fs_hashes) as json_file:
         check_list_data = json.load(json_file)
         for file_path, file_hash in check_list_data.items():
