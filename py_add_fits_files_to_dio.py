@@ -140,7 +140,10 @@ def get_files_with_hashes_list():
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
     file_hashes_exist = is_file_empty_or_brackets(local_json_file_with_local_fs_hashes)
-    print(f"Found {len(file_paths)} files in {args.folder}.")
+    print(f"Found {len(file_paths)} files in {normalized_folder_path}")
+    if file_paths == []:
+        print(f"No files in {normalized_folder_path}")
+        sys.exit(1)
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
