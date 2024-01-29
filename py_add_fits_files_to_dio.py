@@ -67,6 +67,7 @@ def sanitize_folder_path(folder_path):
     sanitized_name = re.sub(r'[^\w\-\.]', '_', folder_path)
     return sanitized_name
 
+normalized_folder_path = os.path.normpath(args.folder)
 sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
 local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
 
@@ -130,7 +131,11 @@ def is_file_empty_or_brackets(file_path):
 
 def get_files_with_hashes_list():
     try:
-        file_paths_unsorted = [os.path.join(args.folder, filename) for filename in os.listdir(args.folder) if not filename.startswith(".")]
+        contents = os.listdir(normalized_folder_path)
+        file_paths_unsorted = [
+            os.path.join(normalized_folder_path, filename) for filename in contents
+            if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
+        ]
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
