@@ -70,7 +70,7 @@ def sanitize_folder_path(folder_path):
 normalized_folder_path = os.path.normpath(args.folder)
 sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
 local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
-local_file_list_stored = os.path.abspath(args.folder) + '/' + local_json_file_with_local_fs_hashes + '_file_list.txt'
+local_file_list_stored = os.getcwd() + '/' + sanitized_filename + '_file_list.txt'
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info(base_url, doi, token=args.token):
