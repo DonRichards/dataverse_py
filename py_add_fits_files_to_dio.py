@@ -70,6 +70,7 @@ def sanitize_folder_path(folder_path):
 normalized_folder_path = os.path.normpath(args.folder)
 sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
 local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
+local_file_list_stored = os.path.isfile(local_json_file_with_local_fs_hashes) + "_files.txt"
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info(base_url, doi, token=args.token):
@@ -132,10 +133,20 @@ def is_file_empty_or_brackets(file_path):
 def get_files_with_hashes_list():
     try:
         contents = os.listdir(normalized_folder_path)
-        file_paths_unsorted = [
-            os.path.join(normalized_folder_path, filename) for filename in contents
-            if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
-        ]
+        if os.path.isfile(local_file_list_stored):
+            file_paths_unsorted = []
+            with open(local_file_list_stored) as f:
+                file_paths_unsorted = f.readlines()
+            file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
+            print(f"Found {len(file_paths_unsorted)} files in {normalized_folder_path}")
+        else:
+            file_paths_unsorted = [
+                os.path.join(normalized_folder_path, filename) for filename in contents
+                if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
+            ]
+            with open(local_file_list_stored, 'w') as f:
+                for file_path in file_paths_unsorted:
+                    f.write("%s\n" % file_path)
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
@@ -155,7 +166,7 @@ def get_files_with_hashes_list():
                 print(f" File {file_path} is empty. Trying again... ", end="\r")
                 hash_file(file_path)
                 file_path, file_hash = hash_file(file_path)
-            # if file_hash exist in the online list of hashes then skip
+            # if file_hash exist in the online list of hashes or if the number of online hashes are zero then skip
             if check_if_hash_is_online(file_hash):
                 if args.display:
                     print(f"File with hash {file_hash} is already online. Skipping...")
@@ -173,10 +184,11 @@ def get_files_with_hashes_list():
             # Check if the file is already online.
             results = {}
             for file_path, file_hash in old_results:
-                if check_if_hash_is_online(file_hash):
-                    if args.display:
-                        print(f"File with hash {file_hash} is already online. Skipping...")
-                    continue
+                if len(get_list_of_the_doi_files_online()) != 0:
+                    if check_if_hash_is_online(file_hash):
+                        if args.display:
+                            print(f"File with hash {file_hash} is already online. Skipping...")
+                        continue
                 results[file_path] = file_hash
         print("")
     print(f"Found hashing {len(results)} files not uploaded to DOI yet.")
@@ -411,6 +423,8 @@ def wipe_report():
     if os.path.isfile(modified_doi_str):
         with open(modified_doi_str, 'w') as second_outfile:
             json.dump([], second_outfile)
+    if os.path.isfile(local_file_list_stored):
+        os.remove(local_file_list_stored)
 
 def get_list_of_the_doi_files_online():
     """
