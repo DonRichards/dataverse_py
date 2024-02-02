@@ -155,6 +155,12 @@ def get_files_with_hashes_list():
                 with open(local_file_list_stored, 'w') as f:
                     for file_path in file_paths_unsorted:
                         f.write("%s\n" % file_path)
+        else:
+            print(f"Reading file paths from {local_file_list_stored}...")
+            file_paths_unsorted = []
+            with open(local_file_list_stored) as f:
+                file_paths_unsorted = f.readlines()
+            file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
