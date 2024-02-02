@@ -327,7 +327,7 @@ def requests_retry_session(
         connect=retries,
         backoff_factor=backoff_factor,
         status_forcelist=status_forcelist,
-        method_whitelist=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE"]
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE"]
     )
     adapter = TimeoutHTTPAdapter(max_retries=retry, timeout=timeout)
     session.mount('http://', adapter)
