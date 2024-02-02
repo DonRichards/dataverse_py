@@ -119,13 +119,16 @@ def hash_file(file_path, hash_algo="md5"):
         return file_path, None
     return file_path, hash_func.hexdigest()
 
-def is_file_empty_or_brackets(file_path):
+def does_file_exist_and_content_isnt_empty(file_path):
     """ Check if the file is empty or contains only brackets or doesn't exist."""
     print(f"Checking if {file_path} is empty...")
     try:
         with open(file_path, 'r') as file:
             content = file.read().strip()
-            return content == "" or content == "[]"
+            # if the file is empty or contains only brackets then return false else return true
+            if content == "" or content == "[]" or content == "{}":
+                return False
+            return True
     except FileNotFoundError:
         print("File not found.")
         return False
@@ -150,11 +153,13 @@ def get_files_with_hashes_list():
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
-    file_hashes_exist = is_file_empty_or_brackets(local_json_file_with_local_fs_hashes)
+    file_hashes_exist = does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes)
+    print(f"Checking if hashes exist: {file_hashes_exist} ...")
     print(f"Found {len(file_paths)} files in {normalized_folder_path}")
     if file_paths == []:
         print(f"No files in {normalized_folder_path}")
         sys.exit(1)
+    # If the file_hashes.json file is missing or is empty then hash the files and write the hashes to the file_hashes.json file
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
@@ -464,7 +469,7 @@ def get_all_local_hashes_that_are_not_online():
     # turn the list of hashes from file into a list of hashes
     missing_files = []
     # If the local_json_file_with_local_fs_hashes is empty then run get_files_with_hashes_list() to create the file_hashes.json file
-    if not os.path.isfile(local_json_file_with_local_fs_hashes) or is_file_empty_or_brackets(local_json_file_with_local_fs_hashes):
+    if not os.path.isfile(local_json_file_with_local_fs_hashes) or does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes):
         get_files_with_hashes_list()
     with open(local_json_file_with_local_fs_hashes) as json_file:
         check_list_data = json.load(json_file)
