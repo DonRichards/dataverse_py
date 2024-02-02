@@ -306,6 +306,7 @@ def requests_retry_session(
     retries=3,
     backoff_factor=0.3,
     status_forcelist=(500, 502, 504),
+    timeout=60,
     session=None,
 ):
     session = session or requests.Session()
@@ -315,6 +316,7 @@ def requests_retry_session(
         connect=retries,
         backoff_factor=backoff_factor,
         status_forcelist=status_forcelist,
+        timeout=timeout,
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
@@ -329,6 +331,7 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
             api_token=args.token,
             dataverse_url=args.server_url,
             persistent_id=args.persistent_id,
+            files_per_request=files_per_batch
         )
     except Exception as e:
         print(f"An error occurred with uploading: {e}")
@@ -405,7 +408,7 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
                 "X-Dataverse-key": args.token
             }
             first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
-            response = requests_retry_session().get(first_url_call, headers=headers, timeout=15)
+            response = requests_retry_session().get(first_url_call, headers=headers)
             data = response.json()
             dataset_id = data['data']['id']
             check_and_unlock_dataset(args.server_url, dataset_id, args.token)
@@ -459,7 +462,7 @@ def get_list_of_the_doi_files_online():
 
     dataset_id = data['data']['id']
     check_and_unlock_dataset(args.server_url, dataset_id, args.token)
-    url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:latest/files"
+    url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:draft/files"
     # Request the list of files for this DOI
     second_response = requests_retry_session().get(url, headers=headers)
     full_data = second_response.json()
