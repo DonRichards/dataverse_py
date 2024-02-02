@@ -342,7 +342,7 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
             api_token=args.token,
             dataverse_url=args.server_url,
             persistent_id=args.persistent_id,
-            n_parallel_uploads=args.files_per_batch,
+            n_parallel_uploads=files_per_batch,
         )
     except Exception as e:
         print(f"An error occurred with uploading: {e}")
