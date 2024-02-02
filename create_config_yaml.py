@@ -9,61 +9,62 @@
 # pipenv run python create_config_yaml.py -f <directory_path> -t <api_token> -p <persistent_id> -u <server_url>
 
 import argparse
-from dvuploader import DVUploader, File
 import os
 import re
 import sys
 import yaml
+from concurrent.futures import ThreadPoolExecutor
 
-# pipenv install PyYAML DVUploader
+# pipenv install PyYAML
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
-parser.add_argument("-t", "--token", help="API token for authentication.", required=True)
-parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset.", required=True)
-parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
-
-args = parser.parse_args()
-folder_path = args.folder
-
-def sanitize_folder_path(folder_path):
-    folder_path = folder_path.rstrip('/').lstrip('./').lstrip('/')
-    sanitized_name = re.sub(r'[^\w\-\.]', '_', folder_path)
-    return sanitized_name
-
-normalized_folder_path = os.path.normpath(args.folder)
-sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder)) + '.yml'
-
-def create_config(directory_path):
+def create_config(directory_path, persistent_id, server_url, token):
     config = {
-        'persistent_id': args.persistent_id,
-        'dataverse_url': args.server_url,
-        'api_token': args.token,
+        'persistent_id': persistent_id,
+        'dataverse_url': server_url,
+        'api_token': token,
         'files': []
     }
 
-    for filename in os.listdir(directory_path):
+    def process_file(filename):
         if not filename.startswith('.'):
             file_path = os.path.join(directory_path, filename)
             if os.path.isfile(file_path):
-                config['files'].append({
+                return {
                     'filepath': file_path,
                     'mimetype': 'image/fits',
                     'description': f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}."
-                })
+                }
+        return None
 
-    with open(sanitized_filename, 'w') as config_file:
-        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False)
+    with ThreadPoolExecutor() as executor:
+        # Using os.scandir() instead of os.listdir() for efficiency
+        futures = [executor.submit(process_file, entry.name) for entry in os.scandir(directory_path) if entry.is_file()]
+        for future in futures:
+            result = future.result()
+            if result:
+                config['files'].append(result)
+
+    return config
 
 if __name__ == "__main__":
-    directory_path = os.path.abspath(folder_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--folder", required=True, help="The directory containing the FITS files.")
+    parser.add_argument("-t", "--token", required=True, help="API token for authentication.")
+    parser.add_argument("-p", "--persistent_id", required=True, help="Persistent ID for the dataset.")
+    parser.add_argument("-u", "--server_url", required=True, help="URL of the Dataverse server.")
+    args = parser.parse_args()
 
+    directory_path = os.path.abspath(args.folder)
     if not os.path.isdir(directory_path):
         print(f"Error: {directory_path} is not a valid directory")
         sys.exit(1)
 
-    create_config(directory_path)
+    config = create_config(directory_path, args.persistent_id, args.server_url, args.token)
+
+    sanitized_filename = re.sub(r'[^\w\-\.]', '_', args.folder.strip('/').strip('./')) + '.yml'
+    with open(sanitized_filename, 'w') as config_file:
+        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False)
+
     print(f"{sanitized_filename} has been created.")
     print("To upload the files to Dataverse, run the following command:")
-    # Run DVUploader tool with the configuration file.
     print(f"pipenv run dvuploader --config-path {sanitized_filename}")
