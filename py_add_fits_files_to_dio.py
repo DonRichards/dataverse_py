@@ -302,12 +302,23 @@ elif not re.match("^https://", args.server_url):
     # Add "https://" if no protocol is specified
     args.server_url = "https://{}".format(args.server_url)
 
+class TimeoutHTTPAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        self.timeout = kwargs.pop("timeout", None)
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        timeout = kwargs.get("timeout")
+        if timeout is None and self.timeout is not None:
+            kwargs["timeout"] = self.timeout
+        return super().send(request, **kwargs)
+
 def requests_retry_session(
     retries=3,
     backoff_factor=0.3,
     status_forcelist=(500, 502, 504),
-    timeout=60,
     session=None,
+    timeout=None,
 ):
     session = session or requests.Session()
     retry = Retry(
@@ -316,9 +327,9 @@ def requests_retry_session(
         connect=retries,
         backoff_factor=backoff_factor,
         status_forcelist=status_forcelist,
-        timeout=timeout,
+        method_whitelist=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE"]
     )
-    adapter = HTTPAdapter(max_retries=retry)
+    adapter = TimeoutHTTPAdapter(max_retries=retry, timeout=timeout)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
