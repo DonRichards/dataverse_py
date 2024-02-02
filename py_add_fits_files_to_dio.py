@@ -169,6 +169,7 @@ def get_files_with_hashes_list():
         print(f"No files in {normalized_folder_path}")
         sys.exit(1)
     # If the file_hashes.json file is missing or is empty then hash the files and write the hashes to the file_hashes.json file
+    online_file_count = len(get_list_of_the_doi_files_online())
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
@@ -181,10 +182,11 @@ def get_files_with_hashes_list():
                 hash_file(file_path)
                 file_path, file_hash = hash_file(file_path)
             # if file_hash exist in the online list of hashes or if the number of online hashes are zero then skip
-            if check_if_hash_is_online(file_hash):
-                if args.display:
-                    print(f"File with hash {file_hash} is already online. Skipping...")
-                continue
+            if online_file_count != 0:
+                if check_if_hash_is_online(file_hash):
+                    if args.display:
+                        print(f"File with hash {file_hash} is already online. Skipping...")
+                    continue
             results[file_path] = file_hash
         print("")
         print(f"Writing hashes to {local_json_file_with_local_fs_hashes}...")
@@ -194,11 +196,10 @@ def get_files_with_hashes_list():
         print(f"Reading hashes from {local_json_file_with_local_fs_hashes}...")
         with open(local_json_file_with_local_fs_hashes) as json_file:
             data = json.load(json_file)
-            old_results = list(data.items())
-            # Check if the file is already online.
+            existing_results = list(data.items())
             results = {}
-            for file_path, file_hash in old_results:
-                if len(get_list_of_the_doi_files_online()) != 0:
+            for file_path, file_hash in existing_results:
+                if online_file_count != 0:
                     if check_if_hash_is_online(file_hash):
                         if args.display:
                             print(f"File with hash {file_hash} is already online. Skipping...")
