@@ -135,27 +135,29 @@ def does_file_exist_and_content_isnt_empty(file_path):
         return False
 
 def get_files_with_hashes_list():
+    file_hashes_exist = does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes)
+    print(f"Checking if hashes exist: {file_hashes_exist} ...")
     try:
-        contents = os.listdir(normalized_folder_path)
-        if os.path.isfile(local_file_list_stored):
-            file_paths_unsorted = []
-            with open(local_file_list_stored) as f:
-                file_paths_unsorted = f.readlines()
-            file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
-            print(f"Found {len(file_paths_unsorted)} files in {normalized_folder_path}")
-        else:
-            file_paths_unsorted = [
-                os.path.join(normalized_folder_path, filename) for filename in contents
-                if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
-            ]
-            with open(local_file_list_stored, 'w') as f:
-                for file_path in file_paths_unsorted:
-                    f.write("%s\n" % file_path)
+        if not file_hashes_exist:
+            print(f"File {local_json_file_with_local_fs_hashes} does not exist or is empty.")
+            contents = os.listdir(normalized_folder_path)
+            if os.path.isfile(local_file_list_stored):
+                file_paths_unsorted = []
+                with open(local_file_list_stored) as f:
+                    file_paths_unsorted = f.readlines()
+                file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
+                print(f"Found {len(file_paths_unsorted)} files in {normalized_folder_path}")
+            else:
+                file_paths_unsorted = [
+                    os.path.join(normalized_folder_path, filename) for filename in contents
+                    if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
+                ]
+                with open(local_file_list_stored, 'w') as f:
+                    for file_path in file_paths_unsorted:
+                        f.write("%s\n" % file_path)
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
-    file_hashes_exist = does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes)
-    print(f"Checking if hashes exist: {file_hashes_exist} ...")
     print(f"Found {len(file_paths)} files in {normalized_folder_path}")
     if file_paths == []:
         print(f"No files in {normalized_folder_path}")
