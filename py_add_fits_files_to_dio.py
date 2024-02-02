@@ -128,6 +128,7 @@ def does_file_exist_and_content_isnt_empty(file_path):
             # if the file is empty or contains only brackets then return false else return true
             if content == "" or content == "[]" or content == "{}":
                 return False
+            print(f"File {file_path} is not empty.")
             return True
     except FileNotFoundError:
         print("File not found.")
