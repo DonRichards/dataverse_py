@@ -342,11 +342,11 @@ def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
             api_token=args.token,
             dataverse_url=args.server_url,
             persistent_id=args.persistent_id,
-            n_parallel_uploads=files_per_batch,
         )
+        time.sleep(5)
     except Exception as e:
         print(f"An error occurred with uploading: {e}")
-        print('Trying again in 10 seconds...')
+        print('Upload_file Step: trying again in 10 seconds...')
         time.sleep(10)
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
