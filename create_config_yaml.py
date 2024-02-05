@@ -8,12 +8,13 @@
 # Usage:
 # pipenv run python create_config_yaml.py -f <directory_path> -t <api_token> -p <persistent_id> -u <server_url>
 
+
 import argparse
 import os
 import re
 import sys
 import yaml
-from yaml.representer import SafeRepresenter
+from yaml.nodes import ScalarNode, MappingNode
 from concurrent.futures import ThreadPoolExecutor
 
 # pipenv install PyYAML
@@ -27,7 +28,6 @@ def my_string_representer(dumper, data):
 # Apply the custom representer to the yaml module
 yaml.add_representer(str, my_string_representer, Dumper=yaml.SafeDumper)
 
-
 def create_config(directory_path, persistent_id, server_url, token):
     config = {
         'persistent_id': persistent_id,
@@ -40,11 +40,13 @@ def create_config(directory_path, persistent_id, server_url, token):
         if not filename.startswith('.'):
             file_path = os.path.join(directory_path, filename)
             if os.path.isfile(file_path):
-                return {
-                    'filepath': file_path,
-                    'mimetype': 'image/fits',
-                    'description': f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}."
-                }
+                # Construct the file entry as a mapping node
+                file_entry = MappingNode(tag='tag:yaml.org,2002:map', value=[
+                    (ScalarNode(tag='tag:yaml.org,2002:str', value='filepath'), ScalarNode(tag='tag:yaml.org,2002:str', value=file_path, style='')),
+                    (ScalarNode(tag='tag:yaml.org,2002:str', value='mimetype'), ScalarNode(tag='tag:yaml.org,2002:str', value='image/fits', style='')),
+                    (ScalarNode(tag='tag:yaml.org,2002:str', value='description'), ScalarNode(tag='tag:yaml.org,2002:str', value=f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}.", style=''))
+                ])
+                return file_entry
         return None
 
     with ThreadPoolExecutor() as executor:
