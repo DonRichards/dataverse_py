@@ -13,9 +13,20 @@ import os
 import re
 import sys
 import yaml
+from yaml.representer import SafeRepresenter
 from concurrent.futures import ThreadPoolExecutor
 
 # pipenv install PyYAML
+
+# Define a custom representer for strings to avoid line breaks in strings
+def my_string_representer(dumper, data):
+    if '\n' in data:
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='')
+
+# Apply the custom representer to the yaml module
+yaml.add_representer(str, my_string_representer, Dumper=yaml.SafeDumper)
+
 
 def create_config(directory_path, persistent_id, server_url, token):
     config = {
@@ -63,7 +74,7 @@ if __name__ == "__main__":
 
     sanitized_filename = re.sub(r'[^\w\-\.]', '_', args.folder.strip('/').strip('./')) + '.yml'
     with open(sanitized_filename, 'w') as config_file:
-        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False)
+        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False, Dumper=yaml.SafeDumper)
 
     print(f"{sanitized_filename} has been created.")
     print("To upload the files to Dataverse, run the following command:")
