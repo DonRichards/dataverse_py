@@ -17,12 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 # pipenv install PyYAML
 
-# Define a custom representer for strings to force them into a double-quoted style
-def quoted_presenter(dumper, data):
-    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+# Define a custom presenter for strings to force them into a literal style
+def literal_presenter(dumper, data):
+    if '\n' in data:
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='')
 
-# Apply the custom representer to the yaml module
-yaml.add_representer(str, quoted_presenter)
+# Apply the custom presenter to the yaml module
+yaml.add_representer(str, literal_presenter)
 
 def create_config(directory_path, persistent_id, server_url, token):
     config = {
