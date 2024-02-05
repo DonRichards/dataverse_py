@@ -8,25 +8,21 @@
 # Usage:
 # pipenv run python create_config_yaml.py -f <directory_path> -t <api_token> -p <persistent_id> -u <server_url>
 
-
 import argparse
 import os
 import re
 import sys
 import yaml
-from yaml.nodes import ScalarNode, MappingNode
 from concurrent.futures import ThreadPoolExecutor
 
 # pipenv install PyYAML
 
-# Define a custom representer for strings to avoid line breaks in strings
-def my_string_representer(dumper, data):
-    if '\n' in data:
-        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
-    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='')
+# Define a custom representer for strings to force them into a double-quoted style
+def quoted_presenter(dumper, data):
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
 
 # Apply the custom representer to the yaml module
-yaml.add_representer(str, my_string_representer, Dumper=yaml.SafeDumper)
+yaml.add_representer(str, quoted_presenter)
 
 def create_config(directory_path, persistent_id, server_url, token):
     config = {
@@ -40,13 +36,11 @@ def create_config(directory_path, persistent_id, server_url, token):
         if not filename.startswith('.'):
             file_path = os.path.join(directory_path, filename)
             if os.path.isfile(file_path):
-                # Construct the file entry as a mapping node
-                file_entry = MappingNode(tag='tag:yaml.org,2002:map', value=[
-                    (ScalarNode(tag='tag:yaml.org,2002:str', value='filepath'), ScalarNode(tag='tag:yaml.org,2002:str', value=file_path, style='')),
-                    (ScalarNode(tag='tag:yaml.org,2002:str', value='mimetype'), ScalarNode(tag='tag:yaml.org,2002:str', value='image/fits', style='')),
-                    (ScalarNode(tag='tag:yaml.org,2002:str', value='description'), ScalarNode(tag='tag:yaml.org,2002:str', value=f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}.", style=''))
-                ])
-                return file_entry
+                return {
+                    'filepath': file_path,
+                    'mimetype': 'image/fits',
+                    'description': f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}."
+                }
         return None
 
     with ThreadPoolExecutor() as executor:
@@ -76,7 +70,7 @@ if __name__ == "__main__":
 
     sanitized_filename = re.sub(r'[^\w\-\.]', '_', args.folder.strip('/').strip('./')) + '.yml'
     with open(sanitized_filename, 'w') as config_file:
-        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False, Dumper=yaml.SafeDumper)
+        yaml.dump(config, config_file, default_flow_style=False, sort_keys=False)
 
     print(f"{sanitized_filename} has been created.")
     print("To upload the files to Dataverse, run the following command:")
