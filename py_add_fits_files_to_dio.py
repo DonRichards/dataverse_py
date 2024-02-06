@@ -215,7 +215,7 @@ def set_files_and_mimetype_to_exported_file(results):
     files = []
 
     # Odd bug on first load.
-    if type(results) == type({}):
+    if isinstance(results, dict):
         results = list(results.items())
 
     for file_path, file_hash in results:
@@ -392,7 +392,7 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
             break
         else:
             print('dataset_locks: ', dataset_locks)
-            unlock_response = requests.delete(lock_url, headers=headers)
+            unlock_response = requests.delete(lock_url, headers=headers, timeout=15)
             print('unlock_response: ', unlock_response)
             print('Dataset is locked. Waiting 5 seconds...')
             time.sleep(5)
