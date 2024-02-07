@@ -11,6 +11,7 @@ grequests = "*"
 requests = "*"
 astropy = "*"
 gevent = "*"
+pyyaml = "*"
 
 [dev-packages]
 
