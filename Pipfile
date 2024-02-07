@@ -12,6 +12,7 @@ requests = "*"
 astropy = "*"
 gevent = "*"
 pyyaml = "*"
+pathlib = "*"
 
 [dev-packages]
 
