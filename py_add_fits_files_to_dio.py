@@ -35,6 +35,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 import pyDataverse.api
 from dvuploader import DVUploader, File
 from mimetype_description import guess_mime_type, get_mime_type_description
@@ -108,9 +109,6 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
     if not args.server_url:
         print("Missing argument: -u SERVER_URL")
     show_help()
-
-dataset_info = get_dataset_info(args.server_url, args.persistent_id)
-dataset_id = dataset_info["data"]["id"]
 
 class File:
     def __init__(self, directoryLabel, filepath, description, mimeType):
@@ -408,7 +406,7 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
         compiled_file_list = set_files_and_mimetype_to_exported_file(local_fs_files_array)
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
-        for i in range(staring_file_number, len(compiled_file_list), files_per_batch):
+        for i in range(restart_number, len(compiled_file_list), files_per_batch):
             batch_start_time = time.time()
             if i + files_per_batch > len(compiled_file_list):
                 files = compiled_file_list[i:]
@@ -507,11 +505,39 @@ def get_all_local_hashes_that_are_not_online():
         return missing_files
     return False
 
+def has_read_access(directory):
+    """
+    Check if the directory has read access.
+    """
+    return os.access(directory, os.R_OK)
+
+def is_directory_empty(directory):
+    directory = Path(directory)
+    try:
+        next(directory.iterdir())
+        return False
+    except StopIteration:
+        return True
+
 if __name__ == "__main__":
     if args.display:
         print("Hiding of hashing progress is turned off.")
     else:
         print("Hiding of hashing progress is turned on.")
+
+    print(f"Checking if {args.folder} exists...")
+    if has_read_access(args.folder):
+        print(f"The user has read access to {args.folder}")
+    else:
+        print(f"The user does not have read access to {args.folder}")
+        sys.exit(1)
+
+    print(f"Checking if {args.folder} is empty...")
+    if is_directory_empty(args.folder):
+        print(f"Folder: {args.folder} is empty")
+        sys.exit(1)
+    else:
+        print(f"{args.folder} is not empty")
 
     if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
@@ -522,6 +548,11 @@ if __name__ == "__main__":
 
     if files_per_batch != 20:
         print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
+
+    print("Get the dataset id...")
+    dataset_info = get_dataset_info(args.server_url, args.persistent_id)
+    dataset_id = dataset_info["data"]["id"]
+    print(f"Dataset ID: {dataset_id}")
 
     while get_all_local_hashes_that_are_not_online() is not False:
         print("Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
