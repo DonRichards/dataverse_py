@@ -81,18 +81,6 @@ def get_dataset_info(base_url, doi, token=args.token):
     else:
         raise Exception(f"Error retrieving dataset: {response.json()['message']}")
 
-dataset_info = get_dataset_info(args.server_url, args.persistent_id)
-dataset_id = dataset_info["data"]["id"]
-
-class File:
-    def __init__(self, directoryLabel, filepath, description, mimeType):
-        self.directoryLabel = directoryLabel
-        self.filepath = filepath
-        self.description = description
-        self.mimeType = mimeType
-    def __repr__(self):
-        return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}', mimeType='{self.mimeType}')"
-
 def show_help():
     print("")
     print("Usage: {} -f FOLDER -t API_TOKEN -p PERSISTENT_ID -u SERVER_URL".format(sys.argv[0]))
@@ -107,6 +95,31 @@ def show_help():
     print("Example: {} -f 'sample_fits/' -t 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' -p 'doi:10.5072/FK2/J8SJZB' -u 'https://localhost:8080'".format(sys.argv[0]))
     print("")
     sys.exit(0)
+
+# Check if all required arguments are provided
+if not args.folder or not args.token or not args.persistent_id or not args.server_url:
+    print("Error: Missing arguments.")
+    if not args.folder:
+        print("Missing argument: -f FOLDER")
+    if not args.token:
+        print("Missing argument: -t API_TOKEN")
+    if not args.persistent_id:
+        print("Missing argument: -p PERSISTENT_ID")
+    if not args.server_url:
+        print("Missing argument: -u SERVER_URL")
+    show_help()
+
+dataset_info = get_dataset_info(args.server_url, args.persistent_id)
+dataset_id = dataset_info["data"]["id"]
+
+class File:
+    def __init__(self, directoryLabel, filepath, description, mimeType):
+        self.directoryLabel = directoryLabel
+        self.filepath = filepath
+        self.description = description
+        self.mimeType = mimeType
+    def __repr__(self):
+        return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}', mimeType='{self.mimeType}')"
 
 def hash_file(file_path, hash_algo="md5"):
     """ Hash a single file and return the hash """
@@ -281,19 +294,6 @@ def set_files_and_mimetype_to_exported_file(results):
     print("")
     return files
 
-# Check if all required arguments are provided
-if not args.folder or not args.token or not args.persistent_id or not args.server_url:
-    print("Error: Missing arguments.")
-    if not args.folder:
-        print("Missing argument: -f FOLDER")
-    if not args.token:
-        print("Missing argument: -t API_TOKEN")
-    if not args.persistent_id:
-        print("Missing argument: -p PERSISTENT_ID")
-    if not args.server_url:
-        print("Missing argument: -u SERVER_URL")
-    show_help()
-
 # Process SERVER_URL to ensure it has the correct protocol
 if re.match("^http://", args.server_url):
     # Replace "http://" with "https://"
@@ -440,7 +440,7 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
-        main(loop_number=loop_number+1, start_time=start_time, time_per_batch=time_per_batch, staring_file_number=restart_number)
+        main(loop_number=loop_number+1)
 
 def wipe_report():
     """
