@@ -521,43 +521,43 @@ def is_directory_empty(directory):
 
 if __name__ == "__main__":
     if args.display:
-        print("Hiding of hashing progress is turned off.")
+        print("\n👀 The option to hide hashing progress is not enabled. Hashing progress will be displayed on the screen.\n")
     else:
-        print("Hiding of hashing progress is turned on.")
+        print("\n🚫 The option to hide hashing progress is enabled. Hashing progress will not be displayed on the screen.\n")
 
-    print(f"Checking if {args.folder} exists...")
+    print(f"🔍 Verifying the existence of the folder: {args.folder}...")
     if has_read_access(args.folder):
-        print(f"The user has read access to {args.folder}")
+        print(f" ✅ The user has read access to the folder: {args.folder}\n")
     else:
-        print(f"The user does not have read access to {args.folder}")
+        print(f" ❌ The user does not have read access to the folder: {args.folder}\n\n")
         sys.exit(1)
 
-    print(f"Checking if {args.folder} is empty...")
+    print(f"📁 Checking if the folder: {args.folder} is empty...")
     if is_directory_empty(args.folder):
-        print(f"Folder: {args.folder} is empty")
+        print(f" ❌ The folder: {args.folder} is empty\n\n")
         sys.exit(1)
     else:
-        print(f"{args.folder} is not empty")
+        print(f" ✅ The folder: {args.folder} is not empty\n")
 
     if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
-        print(f"Wiping the {local_json_file_with_local_fs_hashes} file ...")
+        print(f"🧹 Wiping the {local_json_file_with_local_fs_hashes} file ...\n")
         wipe_report()
         print("")
     else:
-        print(f"Reading hashes from {local_json_file_with_local_fs_hashes} ...")
+        print(f"📖 Reading hashes from {local_json_file_with_local_fs_hashes} ...\n")
 
     if files_per_batch != 20:
-        print("Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.")
+        print("⚠️ Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.\n")
 
-    print("Get the dataset id...")
+    print("🔍 Get the dataset id...")
     dataset_info = get_dataset_info(args.server_url, args.persistent_id)
     dataset_id = dataset_info["data"]["id"]
-    print(f"Dataset ID: {dataset_id}")
+    print(f" 🆔 Dataset ID: {dataset_id}\n")
 
     while get_all_local_hashes_that_are_not_online() is not False:
-        print("Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
-        print("Identified that not all files were uploaded. Starting the upload process...")
+        print("🔄 Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
+        print("🚀 Identified that not all files were uploaded. Starting the upload process...")
         main()
         time.sleep(5)
 
-    print("Done.")
+    print("\n\nDone.\n\n")
