@@ -73,15 +73,6 @@ sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
 local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
 local_file_list_stored = os.getcwd() + '/' + sanitized_filename + '_file_list.txt'
 
-# Use for testing if connection to Dataverse server is successful
-def get_dataset_info(base_url, doi, token=args.token):
-    api = pyDataverse.api.NativeApi(base_url, api_token=token)
-    response = api.get_dataset(doi)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Error retrieving dataset: {response.json()['message']}")
-
 def show_help():
     print("")
     print("Usage: {} -f FOLDER -t API_TOKEN -p PERSISTENT_ID -u SERVER_URL".format(sys.argv[0]))
@@ -109,6 +100,21 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
     if not args.server_url:
         print("Missing argument: -u SERVER_URL")
     show_help()
+
+# Turn args into global variables
+ARGSFOLDER=args.folder
+ARGSTOKEN=args.token
+ARGSPERSISTENTID=args.persistent_id
+ARGSERVER_URL=args.server_url
+
+# Use for testing if connection to Dataverse server is successful
+def get_dataset_info():
+    api = pyDataverse.api.NativeApi(ARGSERVER_URL, api_token=ARGSTOKEN)
+    response = api.get_dataset(ARGSPERSISTENTID)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Error retrieving dataset: {response.json()['message']}")
 
 class File:
     def __init__(self, directoryLabel, filepath, description, mimeType):
@@ -238,7 +244,7 @@ def set_files_and_mimetype_to_exported_file(results):
         if file_path is None or file_path == "":
             print(f" File path for file {file_path} is empty... ", end="\r")
             continue
-        mimeType = guess_mime_type(os.path.join(args.folder, file_path))
+        mimeType = guess_mime_type(os.path.join(ARGSFOLDER, file_path))
         if mimeType == "application/fits":
             mimeType = "image/fits"
 
@@ -278,7 +284,7 @@ def set_files_and_mimetype_to_exported_file(results):
                 mimeType = "application/xml"
             if filename.endswith(".qix"):
                 mimeType = "x-gis/x-shapefile"
-        file_name_without_extension = os.path.splitext(file_path)[0]
+        file_name_without_extension = os.path.splitext(os.path.basename(file_path))[0]
         directory_label = ""
         description = f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {file_name_without_extension}."
         file_dict = {
@@ -293,12 +299,12 @@ def set_files_and_mimetype_to_exported_file(results):
     return files
 
 # Process SERVER_URL to ensure it has the correct protocol
-if re.match("^http://", args.server_url):
+if re.match("^http://", ARGSERVER_URL):
     # Replace "http://" with "https://"
-    args.server_url = re.sub("^http://", "https://", args.server_url)
-elif not re.match("^https://", args.server_url):
+    ARGSERVER_URL = re.sub("^http://", "https://", ARGSERVER_URL)
+elif not re.match("^https://", ARGSERVER_URL):
     # Add "https://" if no protocol is specified
-    args.server_url = "https://{}".format(args.server_url)
+    ARGSERVER_URL = "https://{}".format(ARGSERVER_URL)
 
 class TimeoutHTTPAdapter(HTTPAdapter):
     def __init__(self, *args, **kwargs):
@@ -332,16 +338,15 @@ def requests_retry_session(
     session.mount('https://', adapter)
     return session
 
-def upload_file(api_token, dataverse_url, persistent_id, files, loop_number=0):
+def upload_file(upload_files, loop_number=0):
+    print("Uploading files...")
     try:
-        dvuploader = DVUploader(files=files)
-        print("Uploading files...")
-        dvuploader.upload(
-            api_token=args.token,
-            dataverse_url=args.server_url,
-            persistent_id=args.persistent_id,
+        dvuploader = DVUploader(files=upload_files)
+        dvuploader_status = dvuploader.upload(
+            api_token=ARGSTOKEN,
+            dataverse_url=ARGSERVER_URL,
+            persistent_id=ARGSPERSISTENTID,
         )
-        time.sleep(5)
     except Exception as e:
         print(f"An error occurred with uploading: {e}")
         print('Upload_file Step: trying again in 10 seconds...')
@@ -363,14 +368,14 @@ def check_if_hash_is_online(file_hash):
                 return True
     return False
 
-def check_and_unlock_dataset(server_url, dataset_id, token):
+def check_and_unlock_dataset(server_url, DATASET_ID, token):
     """
     Checks for any locks on the dataset and attempts to unlock if locked.
     """
     headers = {
         "X-Dataverse-key": token
     }
-    lock_url = f"{server_url}/api/datasets/{dataset_id}/locks"
+    lock_url = f"{server_url}/api/datasets/{DATASET_ID}/locks"
     while True:
         try:
             lock_list_response = requests_retry_session().get(lock_url, headers=headers, timeout=15)
@@ -396,16 +401,15 @@ def check_and_unlock_dataset(server_url, dataset_id, token):
             time.sleep(5)
             print('Trying again...')
 
-def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_number=0):
+def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None, staring_file_number=0):
     try:
         if start_time is None:
             start_time = time.time()
         if time_per_batch is None:
             time_per_batch = []
-        local_fs_files_array = get_files_with_hashes_list()
-        compiled_file_list = set_files_and_mimetype_to_exported_file(local_fs_files_array)
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
+        check_and_unlock_dataset(ARGSERVER_URL, DATASET_ID, ARGSTOKEN)
         for i in range(restart_number, len(compiled_file_list), files_per_batch):
             batch_start_time = time.time()
             if i + files_per_batch > len(compiled_file_list):
@@ -414,14 +418,12 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
                 files = compiled_file_list[i:i+files_per_batch]
             print(f"Uploading files {i} to {i+files_per_batch}... {len(compiled_file_list) - i - files_per_batch}")
             headers = {
-                "X-Dataverse-key": args.token
+                "X-Dataverse-key": ARGSTOKEN
             }
-            first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
+            first_url_call = f"{ARGSERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
             response = requests_retry_session().get(first_url_call, headers=headers)
             data = response.json()
-            dataset_id = data['data']['id']
-            check_and_unlock_dataset(args.server_url, dataset_id, args.token)
-            upload_file(args.token, args.server_url, args.persistent_id, files)
+            upload_file(files, 0)
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
             average_time_per_batch = sum(time_per_batch) / len(time_per_batch)
@@ -438,7 +440,7 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
             sys.exit(1)
-        main(loop_number=loop_number+1)
+        main(compiled_file_list, loop_number=loop_number+1)
 
 def wipe_report():
     """
@@ -458,10 +460,10 @@ def get_list_of_the_doi_files_online():
     Get a list of files with hashes that are already online.
     """
     headers = {
-        "X-Dataverse-key": args.token
+        "X-Dataverse-key": ARGSTOKEN
     }
     print("Getting the list of files online for this DOI...")
-    first_url_call = f"{args.server_url}/api/datasets/:persistentId/?persistentId={args.persistent_id}"
+    first_url_call = f"{ARGSERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
     response = requests_retry_session().get(first_url_call, headers=headers)
     data = response.json()
 
@@ -469,9 +471,8 @@ def get_list_of_the_doi_files_online():
         print('Bad api key. Exiting program.')
         sys.exit(1)
 
-    dataset_id = data['data']['id']
-    check_and_unlock_dataset(args.server_url, dataset_id, args.token)
-    url = f"{args.server_url}/api/datasets/{dataset_id}/versions/:draft/files"
+    check_and_unlock_dataset(ARGSERVER_URL, DATASET_ID, ARGSTOKEN)
+    url = f"{ARGSERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
     # Request the list of files for this DOI
     second_response = requests_retry_session().get(url, headers=headers)
     full_data = second_response.json()
@@ -525,19 +526,19 @@ if __name__ == "__main__":
     else:
         print("\n🚫 The option to hide hashing progress is enabled. Hashing progress will not be displayed on the screen.\n")
 
-    print(f"🔍 Verifying the existence of the folder: {args.folder}...")
-    if has_read_access(args.folder):
-        print(f" ✅ The user has read access to the folder: {args.folder}\n")
+    print(f"🔍 Verifying the existence of the folder: {ARGSFOLDER}...")
+    if has_read_access(ARGSFOLDER):
+        print(f" ✅ The user has read access to the folder: {ARGSFOLDER}\n")
     else:
-        print(f" ❌ The user does not have read access to the folder: {args.folder}\n\n")
+        print(f" ❌ The user does not have read access to the folder: {ARGSFOLDER}\n\n")
         sys.exit(1)
 
-    print(f"📁 Checking if the folder: {args.folder} is empty...")
-    if is_directory_empty(args.folder):
-        print(f" ❌ The folder: {args.folder} is empty\n\n")
-        sys.exit(1)
-    else:
-        print(f" ✅ The folder: {args.folder} is not empty\n")
+    # print(f"📁 Checking if the folder: {ARGSFOLDER} is empty...")
+    # if is_directory_empty(ARGSFOLDER):
+    #     print(f" ❌ The folder: {ARGSFOLDER} is empty\n\n")
+    #     sys.exit(1)
+    # else:
+    #     print(f" ✅ The folder: {ARGSFOLDER} is not empty\n")
 
     if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"🧹 Wiping the {local_json_file_with_local_fs_hashes} file ...\n")
@@ -550,14 +551,15 @@ if __name__ == "__main__":
         print("⚠️ Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.\n")
 
     print("🔍 Get the dataset id...")
-    dataset_info = get_dataset_info(args.server_url, args.persistent_id)
-    dataset_id = dataset_info["data"]["id"]
-    print(f" 🆔 Dataset ID: {dataset_id}\n")
-
+    DATASET_INFO = get_dataset_info()
+    DATASET_ID = DATASET_INFO["data"]["id"]
+    print(f" 🆔 Dataset ID: {DATASET_ID}\n")
+    local_fs_files_array = get_files_with_hashes_list()
+    compiled_file_list_with_mimetypes = set_files_and_mimetype_to_exported_file(local_fs_files_array)
     while get_all_local_hashes_that_are_not_online() is not False:
         print("🔄 Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
         print("🚀 Identified that not all files were uploaded. Starting the upload process...")
-        main()
+        main(compiled_file_list_with_mimetypes)
         time.sleep(5)
 
     print("\n\nDone.\n\n")
