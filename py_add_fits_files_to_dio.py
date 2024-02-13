@@ -102,7 +102,7 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
     show_help()
 
 # Turn args into global variables
-ARGSFOLDER=args.folder
+UPLOAD_DIRECTORY=args.folder
 ARGSTOKEN=args.token
 ARGSPERSISTENTID=args.persistent_id
 SERVER_URL=args.server_url
@@ -251,7 +251,7 @@ def set_files_and_mimetype_to_exported_file(results):
         if file_path is None or file_path == "":
             print(f" File path for file {file_path} is empty... ", end="\r")
             continue
-        mimeType = guess_mime_type(os.path.join(ARGSFOLDER, file_path))
+        mimeType = guess_mime_type(os.path.join(UPLOAD_DIRECTORY, file_path))
         if mimeType == "application/fits":
             mimeType = "image/fits"
 
@@ -539,19 +539,19 @@ if __name__ == "__main__":
     else:
         print("\n🚫 The option to hide hashing progress is enabled. Hashing progress will not be displayed on the screen.\n")
 
-    print(f"🔍 Verifying the existence of the folder: {ARGSFOLDER}...")
-    if has_read_access(ARGSFOLDER):
-        print(f" ✅ The user has read access to the folder: {ARGSFOLDER}\n")
+    print(f"🔍 Verifying the existence of the folder: {UPLOAD_DIRECTORY}...")
+    if has_read_access(UPLOAD_DIRECTORY):
+        print(f" ✅ The user has read access to the folder: {UPLOAD_DIRECTORY}\n")
     else:
-        print(f" ❌ The user does not have read access to the folder: {ARGSFOLDER}\n\n")
+        print(f" ❌ The user does not have read access to the folder: {UPLOAD_DIRECTORY}\n\n")
         sys.exit(1)
 
-    print(f"📁 Checking if the folder: {ARGSFOLDER} is empty...")
-    if is_directory_empty(ARGSFOLDER):
-        print(f" ❌ The folder: {ARGSFOLDER} is empty\n\n")
+    print(f"📁 Checking if the folder: {UPLOAD_DIRECTORY} is empty...")
+    if is_directory_empty(UPLOAD_DIRECTORY):
+        print(f" ❌ The folder: {UPLOAD_DIRECTORY} is empty\n\n")
         sys.exit(1)
     else:
-        print(f" ✅ The folder: {ARGSFOLDER} is not empty\n")
+        print(f" ✅ The folder: {UPLOAD_DIRECTORY} is not empty\n")
 
     if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"🧹 Wiping the {local_json_file_with_local_fs_hashes} file ...\n")
