@@ -103,13 +103,13 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
 
 # Turn args into global variables
 UPLOAD_DIRECTORY=args.folder
-ARGSTOKEN=args.token
+DATAVERSE_API_TOKEN=args.token
 ARGSPERSISTENTID=args.persistent_id
 SERVER_URL=args.server_url
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info():
-    api = pyDataverse.api.NativeApi(SERVER_URL, api_token=ARGSTOKEN)
+    api = pyDataverse.api.NativeApi(SERVER_URL, api_token=DATAVERSE_API_TOKEN)
     response = api.get_dataset(ARGSPERSISTENTID)
     if response.status_code == 200:
         return response.json()
@@ -353,7 +353,7 @@ def upload_file(upload_files, loop_number=0):
     try:
         dvuploader = DVUploader(files=upload_files)
         dvuploader_status = dvuploader.upload(
-            api_token=ARGSTOKEN,
+            api_token=DATAVERSE_API_TOKEN,
             dataverse_url=SERVER_URL,
             persistent_id=ARGSPERSISTENTID,
         )
@@ -383,7 +383,7 @@ def check_and_unlock_dataset():
     Checks for any locks on the dataset and attempts to unlock if locked.
     """
     headers = {
-        "X-Dataverse-key": ARGSTOKEN
+        "X-Dataverse-key": DATAVERSE_API_TOKEN
     }
     lock_url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks"
     while True:
@@ -428,7 +428,7 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
                 files = compiled_file_list[i:i+files_per_batch]
             print(f"Uploading files {i} to {i+files_per_batch}... {len(compiled_file_list) - i - files_per_batch}")
             headers = {
-                "X-Dataverse-key": ARGSTOKEN
+                "X-Dataverse-key": DATAVERSE_API_TOKEN
             }
             first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
             response = requests_retry_session().get(first_url_call, headers=headers)
@@ -470,7 +470,7 @@ def get_list_of_the_doi_files_online():
     Get a list of files with hashes that are already online.
     """
     headers = {
-        "X-Dataverse-key": ARGSTOKEN
+        "X-Dataverse-key": DATAVERSE_API_TOKEN
     }
     print("Getting the list of files online for this DOI...")
     first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
