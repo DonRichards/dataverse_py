@@ -105,11 +105,11 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
 ARGSFOLDER=args.folder
 ARGSTOKEN=args.token
 ARGSPERSISTENTID=args.persistent_id
-ARGSERVER_URL=args.server_url
+SERVER_URL=args.server_url
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info():
-    api = pyDataverse.api.NativeApi(ARGSERVER_URL, api_token=ARGSTOKEN)
+    api = pyDataverse.api.NativeApi(SERVER_URL, api_token=ARGSTOKEN)
     response = api.get_dataset(ARGSPERSISTENTID)
     if response.status_code == 200:
         return response.json()
@@ -306,12 +306,12 @@ def set_files_and_mimetype_to_exported_file(results):
     return files
 
 # Process SERVER_URL to ensure it has the correct protocol
-if re.match("^http://", ARGSERVER_URL):
+if re.match("^http://", SERVER_URL):
     # Replace "http://" with "https://"
-    ARGSERVER_URL = re.sub("^http://", "https://", ARGSERVER_URL)
-elif not re.match("^https://", ARGSERVER_URL):
+    SERVER_URL = re.sub("^http://", "https://", SERVER_URL)
+elif not re.match("^https://", SERVER_URL):
     # Add "https://" if no protocol is specified
-    ARGSERVER_URL = "https://{}".format(ARGSERVER_URL)
+    SERVER_URL = "https://{}".format(SERVER_URL)
 
 class TimeoutHTTPAdapter(HTTPAdapter):
     def __init__(self, *args, **kwargs):
@@ -354,7 +354,7 @@ def upload_file(upload_files, loop_number=0):
         dvuploader = DVUploader(files=upload_files)
         dvuploader_status = dvuploader.upload(
             api_token=ARGSTOKEN,
-            dataverse_url=ARGSERVER_URL,
+            dataverse_url=SERVER_URL,
             persistent_id=ARGSPERSISTENTID,
         )
     except Exception as e:
@@ -385,7 +385,7 @@ def check_and_unlock_dataset():
     headers = {
         "X-Dataverse-key": ARGSTOKEN
     }
-    lock_url = f"{ARGSERVER_URL}/api/datasets/{DATASET_ID}/locks"
+    lock_url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks"
     while True:
         try:
             lock_list_response = requests_retry_session().get(lock_url, headers=headers, timeout=15)
@@ -430,7 +430,7 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
             headers = {
                 "X-Dataverse-key": ARGSTOKEN
             }
-            first_url_call = f"{ARGSERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
+            first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
             response = requests_retry_session().get(first_url_call, headers=headers)
             data = response.json()
             upload_file(files, 0)
@@ -473,7 +473,7 @@ def get_list_of_the_doi_files_online():
         "X-Dataverse-key": ARGSTOKEN
     }
     print("Getting the list of files online for this DOI...")
-    first_url_call = f"{ARGSERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
+    first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
     response = requests_retry_session().get(first_url_call, headers=headers)
     data = response.json()
 
@@ -482,7 +482,7 @@ def get_list_of_the_doi_files_online():
         sys.exit(1)
 
     check_and_unlock_dataset()
-    url = f"{ARGSERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
+    url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
     # Request the list of files for this DOI
     second_response = requests_retry_session().get(url, headers=headers)
     full_data = second_response.json()
