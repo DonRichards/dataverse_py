@@ -51,72 +51,37 @@ parser.add_argument("-t", "--token", help="API token for authentication.", requi
 parser.add_argument("-p", "--persistent_id", help="Persistent ID for the dataset.", required=True)
 parser.add_argument("-u", "--server_url", help="URL of the Dataverse server.", required=True)
 parser.add_argument("-b", "--files_per_batch", help="Number of files to upload per batch.", required=False)
+parser.add_argument("-l", "--directory_label", help="The directory label for the file.", required=False)
+parser.add_argument("-d", "--description", help="The description for the file. {file_name_without_extension}", required=False)
 parser.add_argument("-w", "--wipe", help="Wipe the file hashes json file.", action='store_true', required=False)
-parser.add_argument("-d", "--display", help="Hide the display progress.", action='store_false', required=False)
+parser.add_argument("-n", "--hide", help="Hide the display progress.", action='store_false', required=False)
 
 args = parser.parse_args()
 if args.files_per_batch is None:
-    files_per_batch = 20
+    FILES_PER_BATCH = 20
 else:
-    files_per_batch = int(args.files_per_batch)
+    FILES_PER_BATCH = int(args.files_per_batch)
 
-original_doi_str = args.persistent_id
-modified_doi_str = ''.join(['_' if not c.isalnum() else c for c in original_doi_str]) + '.json'
-
-def sanitize_folder_path(folder_path):
-    folder_path = folder_path.rstrip('/').lstrip('./').lstrip('/')
-    sanitized_name = re.sub(r'[^\w\-\.]', '_', folder_path)
-    return sanitized_name
-
-normalized_folder_path = os.path.normpath(args.folder)
-sanitized_filename = sanitize_folder_path(os.path.abspath(args.folder))
-local_json_file_with_local_fs_hashes = os.getcwd() + '/' + sanitized_filename + '.json'
-local_file_list_stored = os.getcwd() + '/' + sanitized_filename + '_file_list.txt'
-
-def show_help():
-    print("")
-    print("Usage: {} -f FOLDER -t API_TOKEN -p PERSISTENT_ID -u SERVER_URL".format(sys.argv[0]))
-    print("  -f FOLDER         The directory containing the FITS files.")
-    print("  -t API_TOKEN      API token for authentication.")
-    print("  -p PERSISTENT_ID  Persistent ID for the dataset.")
-    print("  -u SERVER_URL     URL of the Dataverse server.")
-    print("  -b FILES_PER_BATCH Number of files to upload per batch.")
-    print("  -w WIPE           Wipe the file hashes json file.")
-    print("  -d DISPLAY        Hide the display progress.")
-    print("  -h                Display this help message.")
-    print("Example: {} -f 'sample_fits/' -t 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' -p 'doi:10.5072/FK2/J8SJZB' -u 'https://localhost:8080'".format(sys.argv[0]))
-    print("")
-    sys.exit(1)
-
-# Check if all required arguments are provided
-if not args.folder or not args.token or not args.persistent_id or not args.server_url:
-    print("Error: Missing arguments.")
-    if not args.folder:
-        print("Missing argument: -f FOLDER")
-    if not args.token:
-        print("Missing argument: -t API_TOKEN")
-    if not args.persistent_id:
-        print("Missing argument: -p PERSISTENT_ID")
-    if not args.server_url:
-        print("Missing argument: -u SERVER_URL")
-    show_help()
-
-# Turn args into global variables
 UPLOAD_DIRECTORY=args.folder
 DATAVERSE_API_TOKEN=args.token
 DATASET_PERSISTENT_ID=args.persistent_id
 SERVER_URL=args.server_url
+HIDE_DISPLAY=args.hide
+WIPE_CACHE=args.wipe
+ONLINE_FILE_DATA=[]
 
-# Use for testing if connection to Dataverse server is successful
-def get_dataset_info():
-    api = pyDataverse.api.NativeApi(SERVER_URL, api_token=DATAVERSE_API_TOKEN)
-    response = api.get_dataset(DATASET_PERSISTENT_ID)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Error retrieving dataset: {response.json()['message']}")
+# Process SERVER_URL to ensure it has the correct protocol
+if re.match("^http://", SERVER_URL):
+    # Replace "http://" with "https://"
+    SERVER_URL = re.sub("^http://", "https://", SERVER_URL)
+elif not re.match("^https://", SERVER_URL):
+    # Add "https://" if no protocol is specified
+    SERVER_URL = "https://{}".format(SERVER_URL)
 
 class File:
+    """
+    A class to represent a file.
+    """
     def __init__(self, directoryLabel, filepath, description, mimeType):
         self.directoryLabel = directoryLabel
         self.filepath = filepath
@@ -125,8 +90,61 @@ class File:
     def __repr__(self):
         return f"File(directoryLabel='{self.directoryLabel}', filepath='{self.filepath}', description='{self.description}', mimeType='{self.mimeType}')"
 
+class TimeoutHTTPAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        self.timeout = kwargs.pop("timeout", None)
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        timeout = kwargs.get("timeout")
+        if timeout is None and self.timeout is not None:
+            kwargs["timeout"] = self.timeout
+        return super().send(request, **kwargs)
+
+def requests_retry_session(
+    retries=3,
+    backoff_factor=0.3,
+    status_forcelist=(500, 502, 504),
+    session=None,
+    timeout=None,
+):
+    session = session or requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE"]
+    )
+    adapter = TimeoutHTTPAdapter(max_retries=retry, timeout=timeout)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+def sanitize_folder_path(folder_path):
+    """
+    Sanitize the folder path.
+    """
+    folder_path = folder_path.rstrip('/').lstrip('./').lstrip('/')
+    sanitized_name = re.sub(r'[^\w\-\.]', '_', folder_path)
+    return sanitized_name
+
+def get_dataset_info():
+    """
+    Tests connection and fetches the dataset information.
+    """
+    api = pyDataverse.api.NativeApi(SERVER_URL, api_token=DATAVERSE_API_TOKEN)
+    response = api.get_dataset(DATASET_PERSISTENT_ID)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Error retrieving dataset: {response.json()['message']}")
+
 def hash_file(file_path, hash_algo="md5"):
-    """ Hash a single file and return the hash """
+    """
+    Hash a single file and return the hash.
+    """
     hash_func = getattr(hashlib, hash_algo)()
     try:
         with open(file_path, "rb") as f:
@@ -137,7 +155,9 @@ def hash_file(file_path, hash_algo="md5"):
     return file_path, hash_func.hexdigest()
 
 def does_file_exist_and_content_isnt_empty(file_path):
-    """ Check if the file is empty or contains only brackets or doesn't exist."""
+    """
+    Check if the file is empty or contains only brackets or doesn't exist.
+    """
     print(f"Checking if {file_path} is empty...")
     try:
         with open(file_path, 'r') as file:
@@ -152,82 +172,86 @@ def does_file_exist_and_content_isnt_empty(file_path):
         return False
 
 def get_files_with_hashes_list():
-    file_hashes_exist = does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes)
+    """
+    Get a list of files with hashes from DOI.
+    """
+    file_hashes_exist = does_file_exist_and_content_isnt_empty(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES)
     online_file_count = len(get_list_of_the_doi_files_online())
     print(f"Checking if hashes exist: {file_hashes_exist} ...")
     print(f"Number of files found online {online_file_count}")
     try:
         if not file_hashes_exist:
-            print(f"File {local_json_file_with_local_fs_hashes} does not exist or is empty.")
-            contents = os.listdir(normalized_folder_path)
-            if os.path.isfile(local_file_list_stored):
+            print(f"File {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES} does not exist or is empty.")
+            contents = os.listdir(NORMALIZED_FOLDER_PATH)
+            if os.path.isfile(LOCAL_FILE_LIST_STORED):
                 file_paths_unsorted = []
-                with open(local_file_list_stored) as f:
+                with open(LOCAL_FILE_LIST_STORED) as f:
                     file_paths_unsorted = f.readlines()
                 file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
-                print(f"Found {len(file_paths_unsorted)} files in {normalized_folder_path}")
+                print(f"Found {len(file_paths_unsorted)} files in {NORMALIZED_FOLDER_PATH}")
             else:
                 file_paths_unsorted = [
-                    os.path.join(normalized_folder_path, filename) for filename in contents
-                    if not filename.startswith(".") and os.path.isfile(os.path.join(normalized_folder_path, filename))
+                    os.path.join(NORMALIZED_FOLDER_PATH, filename) for filename in contents
+                    if not filename.startswith(".") and os.path.isfile(os.path.join(NORMALIZED_FOLDER_PATH, filename))
                 ]
-                with open(local_file_list_stored, 'w') as f:
+                with open(LOCAL_FILE_LIST_STORED, 'w') as f:
                     for file_path in file_paths_unsorted:
                         f.write("%s\n" % file_path)
         else:
-            print(f"Reading file paths from {local_file_list_stored}...")
+            print(f"Reading file paths from {LOCAL_FILE_LIST_STORED}...")
             file_paths_unsorted = []
-            with open(local_file_list_stored) as f:
+            with open(LOCAL_FILE_LIST_STORED) as f:
                 file_paths_unsorted = f.readlines()
             file_paths_unsorted = [x.strip() for x in file_paths_unsorted]
     except Exception as e:
         print(f"An error occurred: {e}")
     file_paths = sorted(file_paths_unsorted, reverse=True)
-    print(f"Found {len(file_paths)} files in {normalized_folder_path}")
+    print(f"Found {len(file_paths)} files in {NORMALIZED_FOLDER_PATH}")
     if file_paths == []:
-        print(f"No files in {normalized_folder_path}")
+        print(f"No files in {NORMALIZED_FOLDER_PATH}")
         sys.exit(1)
-    # If the file_hashes.json file is missing or is empty then hash the files and write the hashes to the file_hashes.json file
+    # If the file_hashes.json file is missing or is empty then hash the files and write the hashes to the file_hashes.json file.
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
         for file_path in file_paths:
             file_path, file_hash = hash_file(file_path)
-            if args.display:
+            if HIDE_DISPLAY:
                 print(f" Hashing file {file_path}... ", end="\r")
             while file_hash is None:
                 print(f" File {file_path} is empty. Trying again... ", end="\r")
                 hash_file(file_path)
                 file_path, file_hash = hash_file(file_path)
-            # if file_hash exist in the online list of hashes or if the number of online hashes are zero then skip
+            # If file_hash exist in the online list of hashes or if the number of online hashes are zero then skip.
             if online_file_count > 0:
                 if check_if_hash_is_online(file_hash):
-                    if args.display:
-                        print(f"No file_hashes_exist: File with hash {file_hash} is already online. Skipping...")
+                    if HIDE_DISPLAY:
+                        print(f" No file_hashes_exist: File with hash {file_hash} is already online. Skipping...", end="\r")
                     continue
                 else:
-                    if args.display:
-                        print(f"No file_hashes_exist: File with hash {file_hash} is not online. adding file to the list...")
+                    if HIDE_DISPLAY:
+                        print(f" No file_hashes_exist: File with hash {file_hash} is not online. Adding file to the list...", end="\r")
             results[file_path] = file_hash
         print("")
-        print(f"Writing hashes to {local_json_file_with_local_fs_hashes}...")
-        with open(local_json_file_with_local_fs_hashes, 'w') as f:
+        print(f"Writing hashes to {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES}...")
+        with open(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES, 'w') as f:
             json.dump(results, f, indent=4)
     else:
-        print(f"Reading hashes from {local_json_file_with_local_fs_hashes}...")
-        with open(local_json_file_with_local_fs_hashes) as json_file:
+        print(f"Reading hashes from {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES}...")
+        with open(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES) as json_file:
             data = json.load(json_file)
             existing_results = list(data.items())
+            items_left = len(existing_results)
             results = {}
             for file_path, file_hash in existing_results:
                 if online_file_count > 0:
                     if check_if_hash_is_online(file_hash):
-                        if args.display:
-                            print(f"file_hashes_exist: File with hash {file_hash} is already online. Skipping...")
+                        if HIDE_DISPLAY:
+                            print(f" file_hashes_exist: File with hash {file_hash} is already online. Skipping...", end="\r")
                         continue
                     else:
-                        if args.display:
-                            print(f"No file_hashes_exist: File with hash {file_hash} is not online. adding file to the list...")
+                        if HIDE_DISPLAY:
+                            print(f" No file_hashes_exist: File with hash {file_hash} is not online. Adding file to the list...", end="\r")
                 results[file_path] = file_hash
         print("")
     print(f"Found hashing {len(results)} files not uploaded to DOI yet.")
@@ -243,7 +267,7 @@ def set_files_and_mimetype_to_exported_file(results):
         results = list(results.items())
 
     for file_path, file_hash in results:
-        if args.display:
+        if HIDE_DISPLAY:
             print(f" Setting file {file_path}... ", end="\r")
         if file_hash is None or file_hash == "":
             print(f" Hash for file {file_path} is empty... ", end="\r")
@@ -305,46 +329,6 @@ def set_files_and_mimetype_to_exported_file(results):
     print("")
     return files
 
-# Process SERVER_URL to ensure it has the correct protocol
-if re.match("^http://", SERVER_URL):
-    # Replace "http://" with "https://"
-    SERVER_URL = re.sub("^http://", "https://", SERVER_URL)
-elif not re.match("^https://", SERVER_URL):
-    # Add "https://" if no protocol is specified
-    SERVER_URL = "https://{}".format(SERVER_URL)
-
-class TimeoutHTTPAdapter(HTTPAdapter):
-    def __init__(self, *args, **kwargs):
-        self.timeout = kwargs.pop("timeout", None)
-        super().__init__(*args, **kwargs)
-
-    def send(self, request, **kwargs):
-        timeout = kwargs.get("timeout")
-        if timeout is None and self.timeout is not None:
-            kwargs["timeout"] = self.timeout
-        return super().send(request, **kwargs)
-
-def requests_retry_session(
-    retries=3,
-    backoff_factor=0.3,
-    status_forcelist=(500, 502, 504),
-    session=None,
-    timeout=None,
-):
-    session = session or requests.Session()
-    retry = Retry(
-        total=retries,
-        read=retries,
-        connect=retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=status_forcelist,
-        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE"]
-    )
-    adapter = TimeoutHTTPAdapter(max_retries=retry, timeout=timeout)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    return session
-
 def upload_file(upload_files, loop_number=0):
     """
     Upload files with dvuploader.
@@ -370,12 +354,10 @@ def check_if_hash_is_online(file_hash):
     """
     Checks if the file hash is already online.
     """
-    # Open the json file containing the list of files and thier "md5" hashes and check if the file_hash is in the list
-    with open(modified_doi_str) as json_file:
-        data = json.load(json_file)
-        for file in data:
-            if file_hash in file.values():
-                return True
+    global ONLINE_FILE_DATA
+    for file in ONLINE_FILE_DATA:
+        if file_hash in file.values():
+            return True
     return False
 
 def check_and_unlock_dataset():
@@ -420,13 +402,13 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
         check_and_unlock_dataset()
-        for i in range(restart_number, len(compiled_file_list), files_per_batch):
+        for i in range(restart_number, len(compiled_file_list), FILES_PER_BATCH):
             batch_start_time = time.time()
-            if i + files_per_batch > len(compiled_file_list):
+            if i + FILES_PER_BATCH > len(compiled_file_list):
                 files = compiled_file_list[i:]
             else:
-                files = compiled_file_list[i:i+files_per_batch]
-            print(f"Uploading files {i} to {i+files_per_batch}... {len(compiled_file_list) - i - files_per_batch}")
+                files = compiled_file_list[i:i+FILES_PER_BATCH]
+            print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {len(compiled_file_list) - i - FILES_PER_BATCH}")
             headers = {
                 "X-Dataverse-key": DATAVERSE_API_TOKEN
             }
@@ -437,11 +419,11 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
             average_time_per_batch = sum(time_per_batch) / len(time_per_batch)
-            batches_left = (total_files - i) / files_per_batch
+            batches_left = (total_files - i) / FILES_PER_BATCH
             estimated_time_left = batches_left * average_time_per_batch
             hours, remainder = divmod(estimated_time_left, 3600)
             minutes, _ = divmod(remainder, 60)
-            print(f"Uploading files {i} to {i+files_per_batch}... {total_files - i - files_per_batch} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
+            print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {total_files - i - FILES_PER_BATCH} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
             restart_number = i
 
     except Exception as e:
@@ -456,14 +438,14 @@ def wipe_report():
     """
     Wipe the file_hashes.json file.
     """
-    if os.path.isfile(local_json_file_with_local_fs_hashes):
-        with open(local_json_file_with_local_fs_hashes, 'w') as outfile:
+    if os.path.isfile(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES):
+        with open(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES, 'w') as outfile:
             json.dump([], outfile)
     if os.path.isfile(modified_doi_str):
         with open(modified_doi_str, 'w') as second_outfile:
             json.dump([], second_outfile)
-    if os.path.isfile(local_file_list_stored):
-        os.remove(local_file_list_stored)
+    if os.path.isfile(LOCAL_FILE_LIST_STORED):
+        os.remove(LOCAL_FILE_LIST_STORED)
 
 def get_list_of_the_doi_files_online():
     """
@@ -497,20 +479,21 @@ def get_list_of_the_doi_files_online():
     return files_online_for_this_doi
 
 def get_all_local_hashes_that_are_not_online():
+    global ONLINE_FILE_DATA
     print("Checking if all files are online...")
     check_list_list_of_hashes_online = get_list_of_the_doi_files_online()
     # turn the list of hashes from file into a list of hashes
     missing_files = []
-    # If the local_json_file_with_local_fs_hashes is empty then run get_files_with_hashes_list() to create the file_hashes.json file
-    if not os.path.isfile(local_json_file_with_local_fs_hashes) or does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes):
+    # If the LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES is empty then run get_files_with_hashes_list() to create the file_hashes.json file
+    if not os.path.isfile(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES) or does_file_exist_and_content_isnt_empty(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES):
         get_files_with_hashes_list()
-    with open(local_json_file_with_local_fs_hashes) as json_file:
+    with open(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES) as json_file:
         check_list_data = json.load(json_file)
         for file_path, file_hash in check_list_data.items():
             if file_hash not in check_list_list_of_hashes_online:
                 missing_files.append(file_path)
-                if args.display:
-                    print(f"File with hash {file_hash} is not online.")
+                if HIDE_DISPLAY:
+                    print(f"File with hash {file_hash} is not online.", end="\r")
     if missing_files != []:
         print(f"Found {len(missing_files)} files locally missing from the DOI.")
         return missing_files
@@ -534,7 +517,14 @@ def is_directory_empty(directory):
         return True
 
 if __name__ == "__main__":
-    if args.display:
+    NORMALIZED_FOLDER_PATH = os.path.normpath(UPLOAD_DIRECTORY)
+    SANITIZED_FILENAME = sanitize_folder_path(os.path.abspath(UPLOAD_DIRECTORY))
+    LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES = os.getcwd() + '/' + SANITIZED_FILENAME + '.json'
+    LOCAL_FILE_LIST_STORED = os.getcwd() + '/' + SANITIZED_FILENAME + '_file_list.txt'
+    original_doi_str = DATASET_PERSISTENT_ID
+    modified_doi_str = ''.join(['_' if not c.isalnum() else c for c in original_doi_str]) + '.json'
+
+    if HIDE_DISPLAY:
         print("\n👀 The option to hide hashing progress is not enabled. Hashing progress will be displayed on the screen.\n")
     else:
         print("\n🚫 The option to hide hashing progress is enabled. Hashing progress will not be displayed on the screen.\n")
@@ -553,15 +543,18 @@ if __name__ == "__main__":
     else:
         print(f" ✅ The folder: {UPLOAD_DIRECTORY} is not empty\n")
 
-    if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
-        print(f"🧹 Wiping the {local_json_file_with_local_fs_hashes} file ...\n")
+    if WIPE_CACHE and not os.path.isfile(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES):
+        print(f"🧹 Wiping the {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES} file ...\n")
         wipe_report()
         print("")
     else:
-        print(f"📖 Reading hashes from {local_json_file_with_local_fs_hashes} ...\n")
+        print(f"📖 Reading hashes from {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES} ...\n")
 
-    if files_per_batch != 20:
+    if FILES_PER_BATCH != 20:
         print("⚠️ Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.\n")
+
+    with open(modified_doi_str) as json_file:
+        ONLINE_FILE_DATA = json.load(json_file)
 
     print("🔍 Get the dataset id...")
     DATASET_INFO = get_dataset_info()
@@ -569,8 +562,9 @@ if __name__ == "__main__":
     print(f" 🆔 Dataset ID: {DATASET_ID}\n")
     local_fs_files_array = get_files_with_hashes_list()
     compiled_file_list_with_mimetypes = set_files_and_mimetype_to_exported_file(local_fs_files_array)
+
     while get_all_local_hashes_that_are_not_online() is not False:
-        print("🔄 Checking if all files are online and running the file batch size of {}...".format(files_per_batch))
+        print("🔄 Checking if all files are online and running the file batch size of {}...".format(FILES_PER_BATCH))
         print("🚀 Identified that not all files were uploaded. Starting the upload process...")
         main(compiled_file_list_with_mimetypes)
         time.sleep(5)
