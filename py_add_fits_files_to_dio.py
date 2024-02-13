@@ -513,10 +513,13 @@ def has_read_access(directory):
     return os.access(directory, os.R_OK)
 
 def is_directory_empty(directory):
-    directory = Path(directory)
+    """
+    Check if a directory is empty or not.
+    """
     try:
-        next(directory.iterdir())
-        return False
+        with os.scandir(directory) as it:
+            next(it)
+            return False
     except StopIteration:
         return True
 
@@ -533,12 +536,12 @@ if __name__ == "__main__":
         print(f" ❌ The user does not have read access to the folder: {ARGSFOLDER}\n\n")
         sys.exit(1)
 
-    # print(f"📁 Checking if the folder: {ARGSFOLDER} is empty...")
-    # if is_directory_empty(ARGSFOLDER):
-    #     print(f" ❌ The folder: {ARGSFOLDER} is empty\n\n")
-    #     sys.exit(1)
-    # else:
-    #     print(f" ✅ The folder: {ARGSFOLDER} is not empty\n")
+    print(f"📁 Checking if the folder: {ARGSFOLDER} is empty...")
+    if is_directory_empty(ARGSFOLDER):
+        print(f" ❌ The folder: {ARGSFOLDER} is empty\n\n")
+        sys.exit(1)
+    else:
+        print(f" ✅ The folder: {ARGSFOLDER} is not empty\n")
 
     if args.wipe and not os.path.isfile(local_json_file_with_local_fs_hashes):
         print(f"🧹 Wiping the {local_json_file_with_local_fs_hashes} file ...\n")
