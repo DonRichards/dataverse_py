@@ -86,7 +86,7 @@ def show_help():
     print("  -h                Display this help message.")
     print("Example: {} -f 'sample_fits/' -t 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' -p 'doi:10.5072/FK2/J8SJZB' -u 'https://localhost:8080'".format(sys.argv[0]))
     print("")
-    sys.exit(0)
+    sys.exit(1)
 
 # Check if all required arguments are provided
 if not args.folder or not args.token or not args.persistent_id or not args.server_url:
@@ -153,7 +153,9 @@ def does_file_exist_and_content_isnt_empty(file_path):
 
 def get_files_with_hashes_list():
     file_hashes_exist = does_file_exist_and_content_isnt_empty(local_json_file_with_local_fs_hashes)
+    online_file_count = len(get_list_of_the_doi_files_online())
     print(f"Checking if hashes exist: {file_hashes_exist} ...")
+    print(f"Number of files found online {online_file_count}")
     try:
         if not file_hashes_exist:
             print(f"File {local_json_file_with_local_fs_hashes} does not exist or is empty.")
@@ -186,7 +188,6 @@ def get_files_with_hashes_list():
         print(f"No files in {normalized_folder_path}")
         sys.exit(1)
     # If the file_hashes.json file is missing or is empty then hash the files and write the hashes to the file_hashes.json file
-    online_file_count = len(get_list_of_the_doi_files_online())
     if not file_hashes_exist:
         print("Calculating hashes...")
         results = {}
@@ -199,11 +200,14 @@ def get_files_with_hashes_list():
                 hash_file(file_path)
                 file_path, file_hash = hash_file(file_path)
             # if file_hash exist in the online list of hashes or if the number of online hashes are zero then skip
-            if online_file_count != 0:
+            if online_file_count > 0:
                 if check_if_hash_is_online(file_hash):
                     if args.display:
-                        print(f"File with hash {file_hash} is already online. Skipping...")
+                        print(f"No file_hashes_exist: File with hash {file_hash} is already online. Skipping...")
                     continue
+                else:
+                    if args.display:
+                        print(f"No file_hashes_exist: File with hash {file_hash} is not online. adding file to the list...")
             results[file_path] = file_hash
         print("")
         print(f"Writing hashes to {local_json_file_with_local_fs_hashes}...")
@@ -216,11 +220,14 @@ def get_files_with_hashes_list():
             existing_results = list(data.items())
             results = {}
             for file_path, file_hash in existing_results:
-                if online_file_count != 0:
+                if online_file_count > 0:
                     if check_if_hash_is_online(file_hash):
                         if args.display:
-                            print(f"File with hash {file_hash} is already online. Skipping...")
+                            print(f"file_hashes_exist: File with hash {file_hash} is already online. Skipping...")
                         continue
+                    else:
+                        if args.display:
+                            print(f"No file_hashes_exist: File with hash {file_hash} is not online. adding file to the list...")
                 results[file_path] = file_hash
         print("")
     print(f"Found hashing {len(results)} files not uploaded to DOI yet.")
@@ -339,6 +346,9 @@ def requests_retry_session(
     return session
 
 def upload_file(upload_files, loop_number=0):
+    """
+    Upload files with dvuploader.
+    """
     print("Uploading files...")
     try:
         dvuploader = DVUploader(files=upload_files)
@@ -353,7 +363,7 @@ def upload_file(upload_files, loop_number=0):
         time.sleep(10)
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
-        upload_file(api_token, dataverse_url, persistent_id, files, loop_number=loop_number+1)
+        upload_file(upload_files, loop_number=loop_number+1)
     return True
 
 def check_if_hash_is_online(file_hash):
@@ -368,14 +378,14 @@ def check_if_hash_is_online(file_hash):
                 return True
     return False
 
-def check_and_unlock_dataset(server_url, DATASET_ID, token):
+def check_and_unlock_dataset():
     """
     Checks for any locks on the dataset and attempts to unlock if locked.
     """
     headers = {
-        "X-Dataverse-key": token
+        "X-Dataverse-key": ARGSTOKEN
     }
-    lock_url = f"{server_url}/api/datasets/{DATASET_ID}/locks"
+    lock_url = f"{ARGSERVER_URL}/api/datasets/{DATASET_ID}/locks"
     while True:
         try:
             lock_list_response = requests_retry_session().get(lock_url, headers=headers, timeout=15)
@@ -409,7 +419,7 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
             time_per_batch = []
         total_files = len(compiled_file_list)
         restart_number = staring_file_number
-        check_and_unlock_dataset(ARGSERVER_URL, DATASET_ID, ARGSTOKEN)
+        check_and_unlock_dataset()
         for i in range(restart_number, len(compiled_file_list), files_per_batch):
             batch_start_time = time.time()
             if i + files_per_batch > len(compiled_file_list):
@@ -471,7 +481,7 @@ def get_list_of_the_doi_files_online():
         print('Bad api key. Exiting program.')
         sys.exit(1)
 
-    check_and_unlock_dataset(ARGSERVER_URL, DATASET_ID, ARGSTOKEN)
+    check_and_unlock_dataset()
     url = f"{ARGSERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
     # Request the list of files for this DOI
     second_response = requests_retry_session().get(url, headers=headers)
