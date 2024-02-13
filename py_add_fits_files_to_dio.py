@@ -104,13 +104,13 @@ if not args.folder or not args.token or not args.persistent_id or not args.serve
 # Turn args into global variables
 UPLOAD_DIRECTORY=args.folder
 DATAVERSE_API_TOKEN=args.token
-ARGSPERSISTENTID=args.persistent_id
+DATASET_PERSISTENT_ID=args.persistent_id
 SERVER_URL=args.server_url
 
 # Use for testing if connection to Dataverse server is successful
 def get_dataset_info():
     api = pyDataverse.api.NativeApi(SERVER_URL, api_token=DATAVERSE_API_TOKEN)
-    response = api.get_dataset(ARGSPERSISTENTID)
+    response = api.get_dataset(DATASET_PERSISTENT_ID)
     if response.status_code == 200:
         return response.json()
     else:
@@ -355,7 +355,7 @@ def upload_file(upload_files, loop_number=0):
         dvuploader_status = dvuploader.upload(
             api_token=DATAVERSE_API_TOKEN,
             dataverse_url=SERVER_URL,
-            persistent_id=ARGSPERSISTENTID,
+            persistent_id=DATASET_PERSISTENT_ID,
         )
     except Exception as e:
         print(f"An error occurred with uploading: {e}")
@@ -430,7 +430,7 @@ def main(compiled_file_list, loop_number=0, start_time=None, time_per_batch=None
             headers = {
                 "X-Dataverse-key": DATAVERSE_API_TOKEN
             }
-            first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
+            first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={DATASET_PERSISTENT_ID}"
             response = requests_retry_session().get(first_url_call, headers=headers)
             data = response.json()
             upload_file(files, 0)
@@ -473,7 +473,7 @@ def get_list_of_the_doi_files_online():
         "X-Dataverse-key": DATAVERSE_API_TOKEN
     }
     print("Getting the list of files online for this DOI...")
-    first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={ARGSPERSISTENTID}"
+    first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={DATASET_PERSISTENT_ID}"
     response = requests_retry_session().get(first_url_call, headers=headers)
     data = response.json()
 
