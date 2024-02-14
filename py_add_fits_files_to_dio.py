@@ -62,6 +62,13 @@ if args.files_per_batch is None:
 else:
     FILES_PER_BATCH = int(args.files_per_batch)
 
+# directory_label = args.directory_label
+if args.directory_label is None:
+    FILE_DESCRIPTION_LABEL = ''
+else:
+    FILE_DESCRIPTION_LABEL = args.directory_label
+
+
 UPLOAD_DIRECTORY=args.folder
 DATAVERSE_API_TOKEN=args.token
 DATASET_PERSISTENT_ID=args.persistent_id
@@ -316,7 +323,9 @@ def set_files_and_mimetype_to_exported_file(results):
             if filename.endswith(".qix"):
                 mimeType = "x-gis/x-shapefile"
         file_name_without_extension = os.path.splitext(os.path.basename(file_path))[0]
-        directory_label = ""
+        directory_label = FILE_DESCRIPTION_LABEL
+        # Switch this to enhance its versatility.
+        # description = args.description
         description = f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {file_name_without_extension}."
         file_dict = {
             "directoryLabel": directory_label,
