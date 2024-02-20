@@ -172,7 +172,7 @@ def does_file_exist_and_content_isnt_empty(file_path):
             # if the file is empty or contains only brackets then return false else return true
             if content == "" or content == "[]" or content == "{}":
                 return False
-            print(f"File {file_path} is not empty.")
+            print(f"File is not empty.\n\n")
             return True
     except FileNotFoundError:
         print("File not found.")
@@ -364,10 +364,7 @@ def check_if_hash_is_online(file_hash):
     Checks if the file hash is already online.
     """
     global ONLINE_FILE_DATA
-    for file in ONLINE_FILE_DATA:
-        if file_hash in file.values():
-            return True
-    return False
+    return file_hash in ONLINE_FILE_DATA
 
 def check_and_unlock_dataset():
     """
@@ -460,6 +457,7 @@ def get_list_of_the_doi_files_online():
     """
     Get a list of files with hashes that are already online.
     """
+    global ONLINE_FILE_DATA
     headers = {
         "X-Dataverse-key": DATAVERSE_API_TOKEN
     }
@@ -485,12 +483,13 @@ def get_list_of_the_doi_files_online():
     print("Writing the list of files to file_hashes.json...")
     with open(modified_doi_str, 'w') as outfile:
         json.dump(files_online_for_this_doi, outfile)
+        ONLINE_FILE_DATA = files_online_for_this_doi
     return files_online_for_this_doi
 
 def get_all_local_hashes_that_are_not_online():
     global ONLINE_FILE_DATA
     print("Checking if all files are online...")
-    check_list_list_of_hashes_online = get_list_of_the_doi_files_online()
+    get_list_of_the_doi_files_online()
     # turn the list of hashes from file into a list of hashes
     missing_files = []
     # If the LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES is empty then run get_files_with_hashes_list() to create the file_hashes.json file
@@ -499,7 +498,7 @@ def get_all_local_hashes_that_are_not_online():
     with open(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES) as json_file:
         check_list_data = json.load(json_file)
         for file_path, file_hash in check_list_data.items():
-            if file_hash not in check_list_list_of_hashes_online:
+            if file_hash not in ONLINE_FILE_DATA:
                 missing_files.append(file_path)
                 if HIDE_DISPLAY:
                     print(f"File with hash {file_hash} is not online.", end="\r")
