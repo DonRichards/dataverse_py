@@ -258,7 +258,7 @@ def get_files_with_hashes_list():
                         continue
                     else:
                         if HIDE_DISPLAY:
-                            print(f" No file_hashes_exist: File with hash {file_hash} is not online. Adding file to the list...", end="\r")
+                            print(f" file_hashes_exist: File with hash {file_hash} is not online. Adding file to the list...", end="\r")
                 results[file_path] = file_hash
         print("")
     print(f"Found hashing {len(results)} files not uploaded to DOI yet.")
