@@ -44,6 +44,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import traceback
 import re
+import logging
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", help="The directory containing the FITS files.", required=True)
@@ -82,6 +83,9 @@ ONLINE_FILE_DATA=[]
 COMPILED_FILE_LIST_WITH_MIMETYPES = []
 MODIFIED_DOI_STR = ''
 NOT_ALL_FILES_ONLINE = True
+
+# Configure logging
+logging.basicConfig(filename='wait_for_200.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Process SERVER_URL to ensure it has the correct protocol
 if re.match("^http://", SERVER_URL):
@@ -134,6 +138,24 @@ def requests_retry_session(
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
+
+def fetch_data(url, type="GET"):
+    """
+    Fetch data from a given URL and return the JSON response.
+    """
+    headers = {
+        "X-Dataverse-key": DATAVERSE_API_TOKEN
+    }
+    try:
+        if type == "DELETE":
+            response = requests_retry_session().delete(url, headers=headers)
+        else:
+            response = requests_retry_session().get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch data from {url}: {e}")
+        return None
 
 def sanitize_folder_path(folder_path):
     """
@@ -359,38 +381,64 @@ def upload_file(upload_files, loop_number=0):
         upload_file(upload_files, loop_number=loop_number+1)
     return True
 
+def get_count_of_the_doi_files_online():
+    return len(get_list_of_the_doi_files_online())
+
 def check_and_unlock_dataset():
     """
     Checks for any locks on the dataset and attempts to unlock if locked.
     """
-    headers = {
-        "X-Dataverse-key": DATAVERSE_API_TOKEN
-    }
     lock_url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks"
+    print(f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks")
     while True:
-        try:
-            lock_list_response = requests_retry_session().get(lock_url, headers=headers, timeout=15)
-        except requests.exceptions.HTTPError as e:
-            print(f"HTTP error: {e}")
-        except requests.exceptions.ConnectionError as e:
-            print(f"Connection error: {e}")
-        except requests.exceptions.Timeout as e:
-            print(f"Timeout error: {e}")
-        except requests.exceptions.RequestException as e:
-            print(f"Error: {e}")
-
-        dataset_locks = lock_list_response.json()
+        dataset_locks = fetch_data(lock_url)
         
         if dataset_locks['data'] == []:
             print('Dataset is not locked...')
             break
         else:
             print('dataset_locks: ', dataset_locks)
-            unlock_response = requests.delete(lock_url, headers=headers, timeout=15)
+            unlock_response = fetch_data(lock_url, type="DELETE")
             print('unlock_response: ', unlock_response)
             print('Dataset is locked. Waiting 5 seconds...')
             time.sleep(5)
             print('Trying again...')
+
+def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max_attempts=None):
+    """
+    Check a URL repeatedly until a 200 status code is returned.
+
+    Parameters:
+    - url: The URL to check.
+    - timeout: The maximum time to wait for a 200 response, in seconds.
+    - interval: The time to wait between checks, in seconds.
+    - max_attempts: The maximum number of attempts to check the URL (None for unlimited).
+    """
+    start_time = time.time()
+    attempts = 0
+
+    while True:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                logging.info(f"Success: Received 200 status code from {url}")
+                return True
+            else:
+                logging.warning(f"An error occurred in wait_for_200(): Failure file number{file_number_it_last_completed}: Received {response.status_code} status code from {url}, logging and retrying...")
+        except requests.RequestException as e:
+            logging.error(f"An error occurred in wait_for_200(): Request failed: {e}, logging and retrying...")
+
+        attempts += 1
+        if max_attempts is not None and attempts >= max_attempts:
+            logging.error(f"An error occurred in wait_for_200(): Reached the maximum number of attempts ({max_attempts}) without success.")
+            return False
+
+        elapsed_time = time.time() - start_time
+        if elapsed_time + interval > timeout:
+            logging.error(f"An error occurred in wait_for_200(): Timeout reached ({timeout} seconds) without receiving a 200 status code.")
+            return False
+
+        time.sleep(interval)
 
 def prepare_files_for_upload():
     # Extract MD5 hashes from the online files JSON
@@ -403,8 +451,6 @@ def prepare_files_for_upload():
         file_hash = file_info['hash']    
         if file_hash not in online_hashes:
             files_not_online.append(file_info)
-        # if file_hash in online_hashes and HIDE_DISPLAY == False:
-        #     print(f"File {file_path} is online.", end="\r")
     print("")
     if not files_not_online:
         print("All files are already online.")
@@ -434,6 +480,9 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
             else:
                 files = compiled_files_to_upload[i:i+FILES_PER_BATCH]
             print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {len(compiled_files_to_upload) - i - FILES_PER_BATCH}")
+            # Check that the server is ready first.
+            wait_for_200('https://dataverse-clone.mse.jhu.edu/dataverse/root', file_number_it_last_completed=i, timeout=600, interval=10)
+            original_count = get_count_of_the_doi_files_online()
             upload_file(files, 0)
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
@@ -444,9 +493,23 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
             minutes, _ = divmod(remainder, 60)
             print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {total_files - i - FILES_PER_BATCH} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
             restart_number = i
+            # How Many files were uploaded
+            new_count = get_count_of_the_doi_files_online()
+            # If the new count is the same as the original count then the files were not uploaded.
+            if new_count == original_count:
+                print(f"Files {i} to {i+FILES_PER_BATCH} were not uploaded. Trying again in 5 seconds...")
+                time.sleep(5)
+                main(loop_number=loop_number+1, start_time=start_time, time_per_batch=time_per_batch, staring_file_number=restart_number)
+    except json.JSONDecodeError as json_err:
+        error_context = "Error parsing JSON data"
+        logging.error(f"An unexpected error occurred in Main(): {error_context}: {json_err}")
+        print(f"{error_context}. Check the logs for more details.")
     except Exception as e:
-        print(f"An error occurred in Main(): {e}")
+        error_traceback = traceback.format_exc()
+        logging.error(f"An unexpected error occurred in Main(): {e}\n{error_traceback}")
+        print("An unexpected error occurred. Check the logs for more details.")
         traceback.print_exc()
+        time.sleep(5)
         if loop_number > 5:
             time.sleep(5)
             print('Loop number is greater than 5. Exiting program.')
@@ -476,18 +539,16 @@ def get_list_of_the_doi_files_online():
     }
     print("Getting the list of files online for this DOI...")
     first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={DATASET_PERSISTENT_ID}"
-    response = requests_retry_session().get(first_url_call, headers=headers)
-    data = response.json()
+    data = fetch_data(first_url_call)
 
     if 'status' in data and data['status'] == 'ERROR' and data['message'] == 'Bad api key ':
         print('Bad api key. Exiting program.')
         sys.exit(1)
 
-    check_and_unlock_dataset()
-    url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
+    url_to_get_online_file_list = f"{SERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
     # Request the list of files for this DOI
-    second_response = requests_retry_session().get(url, headers=headers)
-    full_data = second_response.json()
+    full_data = fetch_data(url_to_get_online_file_list)
+
     files_online_for_this_doi = []
     for file in full_data['data']:
         files_online_for_this_doi.append(file['dataFile'])
@@ -502,7 +563,6 @@ def get_list_of_the_doi_files_online():
 def check_all_local_hashes_that_are_online():
     global ONLINE_FILE_DATA
     print("Checking if all files are online...")
-    get_list_of_the_doi_files_online()
     # If the LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES is empty then run get_files_with_hashes_list() to create the file_hashes.json file
     if not does_file_exist_and_content_isnt_empty(LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES):
         check_list_data = get_files_with_hashes_list()
@@ -612,8 +672,9 @@ if __name__ == "__main__":
 
     if FILES_PER_BATCH != 20:
         print("⚠️ - Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.\n")
-
-    print("🔍 - Get the dataset id...")
+    print("🔍 - Checking to see if site is up...")
+    wait_for_200('https://dataverse-clone.mse.jhu.edu/dataverse/root', file_number_it_last_completed=0, timeout=300, interval=10)
+    print("\n🔍 - Get the dataset id...")
     DATASET_INFO = get_dataset_info()
     DATASET_ID = DATASET_INFO["data"]["id"]
     print(f" 🆔 - Dataset ID: {DATASET_ID}\n\n")
@@ -621,9 +682,9 @@ if __name__ == "__main__":
     populate_online_file_data(MODIFIED_DOI_STR)
     local_fs_files_array = get_files_with_hashes_list()
     COMPILED_FILE_LIST_WITH_MIMETYPES = set_files_and_mimetype_to_exported_file(local_fs_files_array)
+    cleanup_storage()
 
-    while NOT_ALL_FILES_ONLINE is not False:
-        cleanup_storage()
+    while NOT_ALL_FILES_ONLINE is not False:    
         print("🔄 - Checking if all files are online and running the file batch size of {}...".format(FILES_PER_BATCH))
         print("🚀 - Identified that not all files were uploaded. Starting the upload process...\n")
         main()
