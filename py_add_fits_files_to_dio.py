@@ -614,9 +614,9 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
     attempts = 0
 
     while True:
+        date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         try:
             response = requests.get(url)
-            date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             if response.status_code == 200:
                 logging.info(f"Success: Received 200 status code from {url}")
                 print(f"{date_time} Success: Received 200 status code from {url}")
