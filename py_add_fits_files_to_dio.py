@@ -576,7 +576,7 @@ def upload_file_with_dvuploader(upload_files, loop_number=0):
 def get_count_of_the_doi_files_online():
     return len(get_list_of_the_doi_files_online())
 
-def check_and_unlock_dataset():
+def check_dataset_is_unlocked():
     """
     Checks for any locks on the dataset and attempts to unlock if locked.
     """
@@ -617,24 +617,26 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
         try:
             response = requests.get(url)
             date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            if response.status_code == 200 and response.text:
+            if response.status_code == 200:
                 logging.info(f"Success: Received 200 status code from {url}")
                 print(f"{date_time} Success: Received 200 status code from {url}")
                 return True
+            elif response.status_code == 403 or "User :guest is not permitted to perform requested action." in response.text:
+                # Check for specific error message indicating an invalid API token
+                logging.error(f"{date_time} Error: The API token is either empty or isn't valid.")
+                print(f"{date_time} Error: The API token is either empty or isn't valid.")
+                return False
             else:
-                message = f"{date_time} An error occurred in wait_for_200(): Received {response.status_code} status code from {url}, logging and retrying..."
+                message = f" {date_time} Warning: Received {response.status_code} status code from {url}. Retrying..."
                 print(message, end="\r")
                 logging.warning(message)
-            if response.status == 'ERROR' and response.message == "User :guest is not permitted to perform requested action.":
-                print("The API token is either empty or isn't valid.")
-                sys.exit(1)
         except requests.RequestException as e:
-            message = f"{date_time} An error occurred in wait_for_200(): Request failed: {e}, logging and retrying..."
-            print(message)
+            message = f" {date_time} An error occurred in wait_for_200(): Request failed: {e}, logging and retrying..."
+            print(message, end="\r")
             logging.error(message)
         attempts += 1
         if max_attempts is not None and attempts >= max_attempts:
-            message = f"{date_time} An error occurred in wait_for_200(): Reached the maximum number of attempts ({max_attempts}) without success."
+            message = f" {date_time} An error occurred in wait_for_200(): Reached the maximum number of attempts ({max_attempts}) without success."
             print(message)
             logging.error(message)
             return False
@@ -645,7 +647,6 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
             print(message)
             logging.error(message)
             return False
-
         time.sleep(interval)
 
 def prepare_files_for_upload():
@@ -667,20 +668,32 @@ def prepare_files_for_upload():
     return files_not_online
 
 def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_number=0):
-    global MODIFIED_DOI_STR
+    global MODIFIED_DOI_STR # Global variable to track modified DOI string.
+
     try:
+        # Initialize start time and time_per_batch if not provided.
         if start_time is None:
-            start_time = time.time()
+            start_time = time.time() # Capture the start time of the operation.
         if time_per_batch is None:
-            time_per_batch = []
+            time_per_batch = [] # Track time taken for each batch to upload.
+
+        # Prepare the list of files to be uploaded.
         compiled_files_to_upload = prepare_files_for_upload()
-        total_files = len(compiled_files_to_upload)
-        restart_number = staring_file_number
+        total_files = len(compiled_files_to_upload) # Total number of files prepared for upload.
+        restart_number = staring_file_number # Starting index for file upload in case of a restart.
+
+        # Print the total number of files to upload.
         print(f"Total files to upload: {total_files}")
-        check_and_unlock_dataset()
+
+        # Ensure the dataset is not locked before starting the upload process.
+        check_dataset_is_unlocked()
+
+        # Exit if there are no files to upload.
         if compiled_files_to_upload == []:
             print("All files are already online.")
             return
+
+        # Iterate over files in batches for upload.
         for i in range(restart_number, len(compiled_files_to_upload), FILES_PER_BATCH):
             batch_start_time = time.time()
             if i + FILES_PER_BATCH > len(compiled_files_to_upload):
@@ -688,14 +701,22 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
             else:
                 files = compiled_files_to_upload[i:i+FILES_PER_BATCH]
             print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {len(compiled_files_to_upload) - i - FILES_PER_BATCH}")
-            # Check that the server is ready first.
+
+            # Ensure the Dataverse server is ready before uploading.
             wait_for_200(f'{SERVER_URL}/dataverse/root', file_number_it_last_completed=i, timeout=600, interval=10)
+
+            # Retrieve the initial count of DOI files online for comparison after upload.
             original_count = get_count_of_the_doi_files_online()
-            check_and_unlock_dataset()
+
+            # Verify the dataset is unlocked before proceeding otherwise wait for it to be unlocked.
+            check_dataset_is_unlocked()
+
+            # Choose the desired upload method. Uncomment the method you wish to use.
             # upload_file_using_pyDataverse(files)
             # s3_direct_upload_file_using_curl(files)
             # native_api_upload_file_using_request(files)
             upload_file_with_dvuploader(files, 0)
+
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
             average_time_per_batch = sum(time_per_batch) / len(time_per_batch)
@@ -704,7 +725,8 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
             hours, remainder = divmod(estimated_time_left, 3600)
             minutes, _ = divmod(remainder, 60)
             print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {total_files - i - FILES_PER_BATCH} files left to upload. Estimated time remaining: {int(hours)} hours and {int(minutes)} minutes.")
-            restart_number = i
+
+            restart_number = i  # Update restart_number in case of a need to restart.
             # How Many files were uploaded
             new_count = get_count_of_the_doi_files_online()
             # If the new count is the same as the original count then the files were not uploaded.
@@ -763,9 +785,11 @@ def get_list_of_the_doi_files_online():
     # Request the list of files for this DOI
     full_data = fetch_data(url_to_get_online_file_list)
 
-    if full_data is None or 'data' not in full_data:
-        print('Failed to fetch data or no data available. Exiting program.')
-        sys.exit(1)
+    while full_data is None or 'data' not in full_data:
+        print(f'Failed to fetch the list of files for {DATASET_PERSISTENT_ID}. Trying again in 5 seconds...')
+        wait_for_200(f"{SERVER_URL}/dataverse/root", file_number_it_last_completed=0, timeout=300, interval=10)
+        full_data = fetch_data(url_to_get_online_file_list)
+        time.sleep(5)
 
     files_online_for_this_doi = []
     for file in full_data['data']:
