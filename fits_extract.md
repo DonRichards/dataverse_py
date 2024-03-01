@@ -11,12 +11,16 @@ This Python script extracts metadata from FITS (Flexible Image Transport System)
 Run the script with the path to a FITS file:
 ```shell
 ./fits_extract.py path/to/your/fits_file.fits
+
+pipenv run python fits_extract.py
+
 ```
 
 For a pretty-printed JSON output:
 
 ```shell
 ./fits_extract.py path/to/your/fits_file.fits --pretty
+
 ```
 
 For help

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # python -m pip install astropy
+# 
+# pipenv run python 
 
 import argparse
 import astropy.io.fits as fits
