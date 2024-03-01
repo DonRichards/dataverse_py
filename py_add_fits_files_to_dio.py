@@ -76,6 +76,7 @@ if args.token == '':
 UPLOAD_DIRECTORY=args.folder
 DATAVERSE_API_TOKEN=args.token
 DATASET_PERSISTENT_ID=args.persistent_id
+DATASET_ID=''
 SERVER_URL=args.server_url
 HIDE_DISPLAY=args.hide
 WIPE_CACHE=args.wipe
@@ -154,7 +155,7 @@ def fetch_data(url, type="GET"):
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        logging.error(f"Failed to fetch data from {url}: {e}")
+        logging.error(f"Failed fetch_data() from {url}: {e}")
         return None
 
 def sanitize_folder_path(folder_path):
@@ -175,6 +176,190 @@ def get_dataset_info():
         return response.json()
     else:
         raise Exception(f"Error retrieving dataset: {response.json()['message']}")
+        logging.error(f"Error get_dataset_info() retrieving dataset: {response.json()['message']}")
+
+def native_api_upload_file_using_request(files):
+    """
+    Uploads a list of files to a Dataverse dataset using the Native API.
+
+    :param files: A list of dictionaries, each containing file metadata and path.
+    """
+    print("\nUploading files using the Native API...")
+    print('-' * 40)
+    # Base URL for dataset file upload using dataset ID
+    url_dataset_id = f"{SERVER_URL}/api/datasets/{DATASET_ID}/add?key={DATAVERSE_API_TOKEN}"
+    # Base URL for dataset file upload using persistent ID
+    url_persistent_id = f"{SERVER_URL}/api/datasets/:persistentId/add?persistentId={DATASET_PERSISTENT_ID}&key={DATAVERSE_API_TOKEN}"
+    for file_info in files:
+        # Extract file metadata
+        directory_label = file_info.get('directoryLabel', '')
+        filepath = file_info.get('filepath')
+        mime_type = file_info.get('mimeType', 'text/plain')
+        description = file_info.get('description', '')
+        hash = file_info.get('hash', '')
+        if HIDE_DISPLAY:
+            print('-' * 40)
+            print(f"Uploading file: {filepath}")
+            print(f"Directory label: {directory_label}")
+            print(f"MIME type: {mime_type}")
+            print(f"Description: {description}")
+            print(f"Hash: {hash}")
+            print("")
+        # Prepare file for upload
+        with open(filepath, 'rb') as f:
+            file_content = f.read()
+        files_to_upload = {'file': (filepath.split('/')[-1], file_content, mime_type)}
+
+        # Optional description and file tags
+        params = {
+            'description': description,
+            'categories': [],
+            'tabIngest': 'false',
+            'restrict': 'false'
+        }
+        params_as_json_string = json.dumps(params)
+        payload = {'jsonData': params_as_json_string}
+
+        # Choose URL based on whether you're using dataset ID or persistent ID
+        upload_url = url_dataset_id if DATASET_ID else url_persistent_id
+        if HIDE_DISPLAY:
+            print(f"Making request: {upload_url}")
+        r = requests.post(upload_url, data=payload, files=files_to_upload)
+
+        # Add a retry if the status code is not 200
+        while r.status_code != 200:
+            print(f"Something went wrong. Retrying... {r.status_code}")
+            wait_for_200(upload_url, file_number_it_last_completed=0, timeout=600, interval=10)
+            r = requests.post(upload_url, data=payload, files=files_to_upload)
+        try:
+            response_json = r.json()
+            print(response_json)
+        except json.JSONDecodeError:
+            print("Response is not in JSON format.")
+            logging.info(f"Response is not in JSON format: {r.text}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            logging.error(f"Error native_api_upload_file_using_request(): An error occurred: {e}")
+
+def s3_direct_upload_file_using_curl(files):
+    """
+    Upload files to a Dataverse dataset using curl for S3 direct upload.
+
+    Args:
+    - files (list of dicts): List containing file metadata and paths.
+    """
+    for file_info in files:
+        # Extract file details
+        directory_label = file_info.get('directoryLabel')
+        filepath = file_info.get('filepath')
+        mime_type = file_info.get('mimeType')
+        description = file_info.get('description')
+        size = os.path.getsize(filepath)
+        # Execute the curl command
+        try:
+            curl_command_for_file_url = f"curl -H 'X-Dataverse-key:{DATAVERSE_API_TOKEN}' '{SERVER_URL}/api/datasets/:persistentId/uploadurls?persistentId={DATASET_PERSISTENT_ID}&size={size}'"
+            upload_to_tmp_output = subprocess.check_output(curl_command_for_file_url, shell=True, text=True)
+            data = json.loads(upload_to_tmp_output)
+            # Extract the "storageIdentifier", "partSize", and "url" values
+            storage_identifier = data['data']['storageIdentifier']
+            part_size = data['data']['partSize']
+            url = data['data']['url']
+            # Execute the curl command and capture the output
+            upload_into_s3_url = subprocess.check_output(
+                f"curl -i -H 'x-amz-tagging:dv-state=temp' -X PUT -T {filepath} '{url}'",
+                shell=True,
+                text=True
+            )
+            # Initialize variables for the values we want to extract
+            x_amz_request_id = None
+            e_tag = None
+            # Split the upload_into_s3_url by new lines and iterate through it to find the desired headers
+            for line in upload_into_s3_url.split('\n'):
+                if line.startswith('x-amz-request-id:'):
+                    x_amz_request_id = line.split(':', 1)[1].strip()
+                elif line.startswith('ETag:'):
+                    e_tag = line.split(':', 1)[1].strip()
+            # Now x_amz_request_id and e_tag variables hold the extracted values
+            file_hash = f"{e_tag}"
+            # Construct the JSON payload
+            payload = {
+                'description': f"{description}",
+                'directoryLabel': f"{directory_label}",
+                'mimeType': f"{mime_type}",
+                'contentType': f"{mime_type}",
+                'storageIdentifier': f"{storage_identifier}",
+                'restrict': 'false',
+                'fileName': os.path.basename(filepath),
+                'fileSystemName': os.path.basename(filepath),
+                'checksum': {'@type': 'MD5', '@value': f"{file_hash}"},
+                'categories': [],
+                'restrict': False
+            }
+            payload_str = json.dumps(payload)
+            register_files_command = f"curl -X POST -H 'X-Dataverse-key: {DATAVERSE_API_TOKEN}' '{SERVER_URL}/api/datasets/:persistentId/add?persistentId={DATASET_PERSISTENT_ID}' -F 'jsonData={payload_str}'"
+            register_files = subprocess.check_output(register_files_command, shell=True, text=True)
+            if not HIDE_DISPLAY:
+                print("curl_command_for_file_url")
+                print(curl_command_for_file_url)
+                print(f"storageIdentifier: {storage_identifier}")
+                print(f"partSize: {part_size}")
+                print(f"url: {url}")
+                print(f"curl -i -H 'x-amz-tagging:dv-state=temp' -X PUT -T {filepath} '{url}'")
+                print("upload_into_s3_url")
+                print(upload_into_s3_url)
+                print(f"x-amz-request-id: {x_amz_request_id}")
+                print(f"ETag/File Hash: {e_tag}")
+                print("payload")
+                print(payload_str)
+                print(register_files_command)
+                print(register_files)
+        # If exception is a timeout error, try again.
+        except subprocess.TimeoutExpired:
+            print(f"Failed to upload file: {filepath} because of timeout. Error: {e.output}")
+            logging.info(f"Failed to upload file: {filepath} because of timeout. Error: {e.output}")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to upload file: {filepath}. Error: {e.output}")
+            logging.info(f"Failed to upload file: {filepath}. Error: {e.output}")
+            exit(1)
+
+def upload_file_using_pyDataverse(files):
+    """
+    Upload files to a Dataverse dataset.
+
+    Args:
+    - files (list of dicts): List containing file metadata and paths.
+    """
+    # Initialize the Dataverse API
+    api = pyDataverse.api.NativeApi(SERVER_URL, DATAVERSE_API_TOKEN)
+    data_access_api = pyDataverse.api.DataAccessApi(SERVER_URL, DATAVERSE_API_TOKEN)
+
+    for file_info in files:
+        # Extract file details
+        directory_label = file_info.get('directoryLabel')
+        filepath = file_info.get('filepath')
+        mime_type = file_info.get('mimeType')
+        description = file_info.get('description')
+        # Note: 'hash' is not used directly in the upload, but could be part of a validation step
+
+        # Prepare the metadata for the file
+        file_metadata = {
+            'description': description,
+            'directoryLabel': directory_label,
+            'categories': [],
+            'restrict': False
+        }
+
+        # Convert metadata to JSON format as required by the API
+        file_metadata_json = json.dumps(file_metadata)
+
+        # Upload the file
+        resp = api.upload_datafile(DATASET_PERSISTENT_ID, filepath, file_metadata_json, mime_type)
+
+        if resp.status_code == 200:
+            print(f"File uploaded successfully: {filepath}")
+        else:
+            print(f"Failed to upload file: {filepath}. Response: {resp.text}")
+            logging.info(f"Failed to upload file: {filepath}. Response: {resp.text}")
 
 def populate_online_file_data(json_file_path):
     global ONLINE_FILE_DATA
@@ -183,8 +368,10 @@ def populate_online_file_data(json_file_path):
             ONLINE_FILE_DATA = json.load(file)
     except FileNotFoundError:
         print(f"File {json_file_path} not found. Ensure the path is correct.")
+        logging.error(f"Error populate_online_file_data() File {json_file_path} not found. Ensure the path is correct.")
     except json.JSONDecodeError:
         print(f"Error decoding JSON from {json_file_path}. Ensure the file contains valid JSON.")
+        logging.error(f"Error populate_online_file_data() Error decoding JSON from {json_file_path}. Ensure the file contains valid JSON.")
 
 def hash_file(file_path, hash_algo="md5"):
     hash_func = getattr(hashlib, hash_algo)()
@@ -287,31 +474,29 @@ def get_files_with_hashes_list():
     return results
 
 def set_files_and_mimetype_to_exported_file(results):
-    print("Setting file definitions with mimetypes & metadata together...")
-    print("This will likely take a while.")
-    files = []
+    print("\nSetting file definitions with mimetypes & metadata together...")
+    print('-' * 40)
+    print("This might take a while...")
+    if os.path.exists(LOCAL_FILE_DICT_STORED):
+        print("Loading files from stored file...")
+        with open(LOCAL_FILE_DICT_STORED, 'r') as infile:
+            files = json.load(infile)
+    else:
+        files = []
 
-    # Odd bug on first load.
-    if isinstance(results, dict):
-        results = list(results.items())
+        if isinstance(results, dict):
+            results = list(results.items())
 
-    for file_path, file_hash in results:
-        if HIDE_DISPLAY:
-            print(f" Setting file {file_path}... ", end="\r")
-        if file_hash is None or file_hash == "":
-            print(f" Hash for file {file_path} is empty... ", end="\r")
-            continue
-        if file_path is None or file_path == "":
-            print(f" File path for file {file_path} is empty... ", end="\r")
-            continue
-        mimeType = guess_mime_type(os.path.join(UPLOAD_DIRECTORY, file_path))
-        if mimeType == "application/fits":
-            mimeType = "image/fits"
-
-        filename = os.path.basename(file_path)
-        if mimeType == "None" or type(mimeType) == type(None) or mimeType == "":
-            # Start with setting the default to a binary file and change as needed.
-            mimeType = "application/octet-stream"
+        for file_path, file_hash in results:
+            if HIDE_DISPLAY:
+                print(f" Setting file {file_path}... ", end="\r")
+            if not file_hash or not file_path:
+                continue
+            filename = os.path.basename(file_path)
+            mimeType = guess_mime_type(os.path.join(UPLOAD_DIRECTORY, file_path))
+            if mimeType == "None" or type(mimeType) == type(None) or mimeType == "":
+                # Start with setting the default to a binary file and change as needed.
+                mimeType = "application/octet-stream"
             if filename.endswith(".shp"):
                 mimeType = "application/octet-stream"
             if filename.endswith(".shp.xml"):
@@ -344,23 +529,28 @@ def set_files_and_mimetype_to_exported_file(results):
                 mimeType = "application/xml"
             if filename.endswith(".qix"):
                 mimeType = "x-gis/x-shapefile"
-        file_name_without_extension = os.path.splitext(os.path.basename(file_path))[0]
-        directory_label = FILE_DESCRIPTION_LABEL
-        # Switch this to enhance its versatility.
-        # description = args.description
-        description = f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {file_name_without_extension}."
-        file_dict = {
-            "directoryLabel": directory_label,
-            "filepath": file_path,
-            "mimeType": mimeType,
-            "description": description,
-            "hash": file_hash
-        }
-        files.append(file_dict)
+            if mimeType == "application/fits":
+                mimeType = "image/fits"
+            description = f"Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog {os.path.splitext(filename)[0]}."
+            file_dict = {
+                "directoryLabel": FILE_DESCRIPTION_LABEL,
+                "filepath": file_path,
+                "mimeType": mimeType,
+                "description": description,
+                "hash": file_hash
+            }
+            files.append(file_dict)
+
+        # Save the generated files array to LOCAL_FILE_DICT_STORED
+        with open(LOCAL_FILE_DICT_STORED, 'w') as outfile:
+            json.dump(files, outfile)
+        print("Files definitions saved.")
+    print("set_files_and_mimetype_to_exported_file complete")
+    print('-' * 40)
     print("")
     return files
 
-def upload_file(upload_files, loop_number=0):
+def upload_file_with_dvuploader(upload_files, loop_number=0):
     """
     Upload files with dvuploader.
     """
@@ -378,7 +568,9 @@ def upload_file(upload_files, loop_number=0):
         time.sleep(10)
         if loop_number > 5:
             print('Loop number is greater than 5. Exiting program.')
-        upload_file(upload_files, loop_number=loop_number+1)
+            logging.info(f"upload_file_with_dvuploader: An error occurred with uploading: {e}")
+            sys.exit(1)
+        upload_file_with_dvuploader(upload_files, loop_number=loop_number+1)
     return True
 
 def get_count_of_the_doi_files_online():
@@ -390,18 +582,22 @@ def check_and_unlock_dataset():
     """
     lock_url = f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks"
     print(f"{SERVER_URL}/api/datasets/{DATASET_ID}/locks")
+    print('-' * 40)
     while True:
         dataset_locks = fetch_data(lock_url)
-        
+        # Check if dataset_locks is None or if 'data' key is not present
+        if dataset_locks is None or 'data' not in dataset_locks:
+            print('Failed to fetch dataset locks or no data available.')
+            break
         if dataset_locks['data'] == []:
             print('Dataset is not locked...')
             break
         else:
             print('dataset_locks: ', dataset_locks)
-            unlock_response = fetch_data(lock_url, type="DELETE")
-            print('unlock_response: ', unlock_response)
-            print('Dataset is locked. Waiting 5 seconds...')
-            time.sleep(5)
+            # unlock_response = fetch_data(lock_url, type="DELETE")
+            # print('unlock_response: ', unlock_response)
+            print('Dataset is locked. Waiting 2 seconds...')
+            time.sleep(2)
             print('Trying again...')
 
 def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max_attempts=None):
@@ -420,22 +616,31 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
     while True:
         try:
             response = requests.get(url)
+            date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             if response.status_code == 200:
                 logging.info(f"Success: Received 200 status code from {url}")
+                print(f"{date_time} Success: Received 200 status code from {url}")
                 return True
             else:
-                logging.warning(f"An error occurred in wait_for_200(): Failure file number{file_number_it_last_completed}: Received {response.status_code} status code from {url}, logging and retrying...")
+                message = f"{date_time} An error occurred in wait_for_200(): Received {response.status_code} status code from {url}, logging and retrying..."
+                print(message, end="\r")
+                logging.warning(message)
         except requests.RequestException as e:
-            logging.error(f"An error occurred in wait_for_200(): Request failed: {e}, logging and retrying...")
-
+            message = f"{date_time} An error occurred in wait_for_200(): Request failed: {e}, logging and retrying..."
+            print(message)
+            logging.error(message)
         attempts += 1
         if max_attempts is not None and attempts >= max_attempts:
-            logging.error(f"An error occurred in wait_for_200(): Reached the maximum number of attempts ({max_attempts}) without success.")
+            message = f"{date_time} An error occurred in wait_for_200(): Reached the maximum number of attempts ({max_attempts}) without success."
+            print(message)
+            logging.error(message)
             return False
 
         elapsed_time = time.time() - start_time
         if elapsed_time + interval > timeout:
-            logging.error(f"An error occurred in wait_for_200(): Timeout reached ({timeout} seconds) without receiving a 200 status code.")
+            message = f"An error occurred in wait_for_200(): Timeout reached ({timeout} seconds) without success."
+            print(message)
+            logging.error(message)
             return False
 
         time.sleep(interval)
@@ -448,7 +653,7 @@ def prepare_files_for_upload():
     files_not_online = []
     for file_info in COMPILED_FILE_LIST_WITH_MIMETYPES:
         file_path = file_info['filepath']
-        file_hash = file_info['hash']    
+        file_hash = file_info['hash']
         if file_hash not in online_hashes:
             files_not_online.append(file_info)
     print("")
@@ -481,9 +686,13 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
                 files = compiled_files_to_upload[i:i+FILES_PER_BATCH]
             print(f"Uploading files {i} to {i+FILES_PER_BATCH}... {len(compiled_files_to_upload) - i - FILES_PER_BATCH}")
             # Check that the server is ready first.
-            wait_for_200('https://dataverse-clone.mse.jhu.edu/dataverse/root', file_number_it_last_completed=i, timeout=600, interval=10)
+            wait_for_200(f'{SERVER_URL}/dataverse/root', file_number_it_last_completed=i, timeout=600, interval=10)
             original_count = get_count_of_the_doi_files_online()
-            upload_file(files, 0)
+            check_and_unlock_dataset()
+            # upload_file_using_pyDataverse(files)
+            # s3_direct_upload_file_using_curl(files)
+            # native_api_upload_file_using_request(files)
+            upload_file_with_dvuploader(files, 0)
             batch_end_time = time.time()
             time_per_batch.append(batch_end_time - batch_start_time)
             average_time_per_batch = sum(time_per_batch) / len(time_per_batch)
@@ -501,9 +710,9 @@ def main(loop_number=0, start_time=None, time_per_batch=None, staring_file_numbe
                 time.sleep(5)
                 main(loop_number=loop_number+1, start_time=start_time, time_per_batch=time_per_batch, staring_file_number=restart_number)
     except json.JSONDecodeError as json_err:
-        error_context = "Error parsing JSON data"
+        error_context="An unexpected error occurred in Main(): Error parsing JSON data. Check the logs for more details."
+        print(f"{error_context} {json_err}")
         logging.error(f"An unexpected error occurred in Main(): {error_context}: {json_err}")
-        print(f"{error_context}. Check the logs for more details.")
     except Exception as e:
         error_traceback = traceback.format_exc()
         logging.error(f"An unexpected error occurred in Main(): {e}\n{error_traceback}")
@@ -528,6 +737,8 @@ def wipe_report():
             json.dump([], second_outfile)
     if os.path.isfile(LOCAL_FILE_LIST_STORED):
         os.remove(LOCAL_FILE_LIST_STORED)
+    if os.path.isfile(LOCAL_FILE_DICT_STORED):
+        os.remove(LOCAL_FILE_DICT_STORED)
 
 def get_list_of_the_doi_files_online():
     """
@@ -537,17 +748,21 @@ def get_list_of_the_doi_files_online():
     headers = {
         "X-Dataverse-key": DATAVERSE_API_TOKEN
     }
-    print("Getting the list of files online for this DOI...")
+    print(f"\nRe-fetching updated list of online files for this {DATASET_PERSISTENT_ID}...")
     first_url_call = f"{SERVER_URL}/api/datasets/:persistentId/?persistentId={DATASET_PERSISTENT_ID}"
     data = fetch_data(first_url_call)
 
-    if 'status' in data and data['status'] == 'ERROR' and data['message'] == 'Bad api key ':
+    if data is None or 'status' in data and data['status'] == 'ERROR' and 'message' in data and data['message'] == 'Bad api key ':
         print('Bad api key. Exiting program.')
         sys.exit(1)
 
     url_to_get_online_file_list = f"{SERVER_URL}/api/datasets/{DATASET_ID}/versions/:draft/files"
     # Request the list of files for this DOI
     full_data = fetch_data(url_to_get_online_file_list)
+
+    if full_data is None or 'data' not in full_data:
+        print('Failed to fetch data or no data available. Exiting program.')
+        sys.exit(1)
 
     files_online_for_this_doi = []
     for file in full_data['data']:
@@ -609,10 +824,10 @@ def cleanup_storage():
             deleted_items = [item.strip() for item in message.split('\nDeleted:')[1].split(',') if item.strip()] if '\nDeleted:' in message else []
             found_count = len(found_items)
             deleted_count = len(deleted_items)
-            
+
             print(f"Files registered: {found_count}")
             print(f"Files not registered and to be cleaned up: {deleted_count}")
-            
+
             # Bypass the prompt if there are no files to delete
             if deleted_count == 0:
                 print("No files to clean up. Exiting.")
@@ -641,6 +856,7 @@ if __name__ == "__main__":
     SANITIZED_FILENAME = sanitize_folder_path(os.path.abspath(UPLOAD_DIRECTORY))
     LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES = os.getcwd() + '/' + SANITIZED_FILENAME + '.json'
     LOCAL_FILE_LIST_STORED = os.getcwd() + '/' + SANITIZED_FILENAME + '_file_list.txt'
+    LOCAL_FILE_DICT_STORED = os.getcwd() + '/' + SANITIZED_FILENAME + '_file_dict.txt'
     original_doi_str = DATASET_PERSISTENT_ID
     MODIFIED_DOI_STR = ''.join(['_' if not c.isalnum() else c for c in original_doi_str]) + '.json'
 
@@ -672,9 +888,10 @@ if __name__ == "__main__":
 
     if FILES_PER_BATCH != 20:
         print("⚠️ - Bigger batch sizes does not mean faster upload times. It is recommended to keep the batch size at 20. This is intended for fine tuning.\n")
-    print("🔍 - Checking to see if site is up...")
-    wait_for_200('https://dataverse-clone.mse.jhu.edu/dataverse/root', file_number_it_last_completed=0, timeout=300, interval=10)
-    print("\n🔍 - Get the dataset id...")
+
+    print(f"🔍 - Checking to see if {SERVER_URL}/dataverse/root is up...")
+    wait_for_200(f"{SERVER_URL}/dataverse/root", file_number_it_last_completed=0, timeout=300, interval=10)
+    print(" ✓ 200 status received.\n\n🔍 - Get the dataset id...")
     DATASET_INFO = get_dataset_info()
     DATASET_ID = DATASET_INFO["data"]["id"]
     print(f" 🆔 - Dataset ID: {DATASET_ID}\n\n")
@@ -684,7 +901,7 @@ if __name__ == "__main__":
     COMPILED_FILE_LIST_WITH_MIMETYPES = set_files_and_mimetype_to_exported_file(local_fs_files_array)
     cleanup_storage()
 
-    while NOT_ALL_FILES_ONLINE is not False:    
+    while NOT_ALL_FILES_ONLINE is not False:
         print("🔄 - Checking if all files are online and running the file batch size of {}...".format(FILES_PER_BATCH))
         print("🚀 - Identified that not all files were uploaded. Starting the upload process...\n")
         main()

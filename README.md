@@ -21,6 +21,41 @@ Found that using __pyDataverse.api__ added options that would have been difficul
 - Python's Virtual Environment
 - Locally set up: Utilizing `pip install` to configure the script's dependencies has been the conventional method for setting up Python scripts. However, this approach is becoming less favorable over time.
 
+### Setup 'API_KEY' Before You Start
+Before running the scripts, you need to obtain your API token from Dataverse. This is optional so that you don't have to enter the API key into the terminal and instead can pass __'$API_KEY'__ to the scripts.
+
+1. Navigate to `[Site_URL]/dataverseuser.xhtml?selectTab=dataRelatedToMe` in your web browser.
+1. Click on the "API Token" tab.
+1. Copy the displayed token string.
+
+Next, set the __'API_KEY'__ environment variable in your terminal:
+
+#### For Linux and Mac:
+
+Open your terminal and execute the following command, replacing __'xxxxxxxxxxxxxxxxxxxxxxxxxx'__ with your actual API token string:
+
+```shell
+export API_KEY='xxxxxxxxxxxxxxxxxxxxxxxxxx'
+```
+
+To make the __'API_KEY'__ persist across terminal sessions, you can add the above line to your __'~/.bashrc'__, __'~/.bash_profile'__, or __'~/.zshrc'__ file, depending on your shell and operating system.
+
+
+#### For Windows:
+
+Open Command Prompt or PowerShell and execute the following command, replacing xxxxxxxxxxxxxxxxxxxxxxxxxx with your actual API token string:
+
+__Command Prompt:__
+```shell
+set API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+__PowerShell:__
+```shell
+$env:API_KEY='xxxxxxxxxxxxxxxxxxxxxxxxxx'
+```
+To make the __'API_KEY'__ persist across sessions in Windows, you can set it as a user or system environment variable through the System Properties. This can be accessed by searching for "Edit the system environment variables" in the Start menu. In the System Properties window, click on the "Environment Variables" button, and then you can add or edit the __'API_KEY'__ variable under either User or System variables as needed.
+
 #### Suggested Setup (virtual environment) - _not required_
 Install [pipenv](https://pipenv.pypa.io/en/latest/installation.html) to simplifying dependency management and providing consistent environments across different installations and it should avoid version conflicts with libraries already installed.
 ```shell
@@ -30,7 +65,7 @@ python -m pip install pipenv
 brew install pyenv
 
 # Linux
-git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+git clone https://github.com/pyenv/pyenv.git $(python -m site --user-base)/.pyenv
 echo 'export PYENV_ROOT="$(python -m site --user-base)/.pyenv"' >> ~/.bashrc
 echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
 echo 'eval "$(pyenv init --path)"' >> ~/.bashrc
