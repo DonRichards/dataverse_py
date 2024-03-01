@@ -617,7 +617,7 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
         try:
             response = requests.get(url)
             date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            if response.status_code == 200:
+            if response.status_code == 200 and response.text:
                 logging.info(f"Success: Received 200 status code from {url}")
                 print(f"{date_time} Success: Received 200 status code from {url}")
                 return True
@@ -625,6 +625,9 @@ def wait_for_200(url, file_number_it_last_completed, timeout=60, interval=5, max
                 message = f"{date_time} An error occurred in wait_for_200(): Received {response.status_code} status code from {url}, logging and retrying..."
                 print(message, end="\r")
                 logging.warning(message)
+            if response.status == 'ERROR' and response.message == "User :guest is not permitted to perform requested action.":
+                print("The API token is either empty or isn't valid.")
+                sys.exit(1)
         except requests.RequestException as e:
             message = f"{date_time} An error occurred in wait_for_200(): Request failed: {e}, logging and retrying..."
             print(message)
