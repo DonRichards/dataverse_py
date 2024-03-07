@@ -97,8 +97,8 @@ pipenv --rm
 ```shell
 python -m pip install dvuploader pyDataverse mimetype-description shutil grequests requests
 
-# Optional Packages (for the fits_extract.py script)
-python -m pip install astropy
+# Optional Packages (for the fits_extract.py and group_files scripts)
+python -m pip install astropy pandas
 ```
 
 __Note__: "_./_" is a shorthand notation used by the computer to specify the execution of a file, especially when the file itself indicates that it's a Python script. In simpler terms, "_python foo.py_" and "_./foo.py_" essentially perform the same action.
