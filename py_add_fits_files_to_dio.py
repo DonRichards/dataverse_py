@@ -208,6 +208,11 @@ def native_api_upload_file_using_request(files):
         # Prepare file for upload
         with open(filepath, 'rb') as f:
             file_content = f.read()
+        # Check to see if file_content is empty
+        if not file_content:
+            print(f"File {filepath} is empty. Skipping...")
+            logging.info(f"File {filepath} is empty. Skipping...")
+            continue
         files_to_upload = {'file': (filepath.split('/')[-1], file_content, mime_type)}
 
         # Optional description and file tags
@@ -566,10 +571,7 @@ def upload_file_with_dvuploader(upload_files, loop_number=0):
         print(f"An error occurred with uploading: {e}")
         print('Upload_file Step: trying again in 10 seconds...')
         time.sleep(10)
-        if loop_number > 5:
-            print('Loop number is greater than 5. Exiting program.')
-            logging.info(f"upload_file_with_dvuploader: An error occurred with uploading: {e}")
-            sys.exit(1)
+        logging.info(f"upload_file_with_dvuploader: An error occurred with uploading retry Number{loop_number}: {e}")
         upload_file_with_dvuploader(upload_files, loop_number=loop_number+1)
     return True
 
