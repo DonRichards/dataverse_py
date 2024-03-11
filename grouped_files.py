@@ -4,13 +4,17 @@ import json
 from mimetype_description import guess_mime_type, get_mime_type_description
 import os
 import pandas as pd
-import re
 import pyDataverse.api
+import re
+from requests.exceptions import SSLError, ConnectionError
 import requests
 import shutil
 import sys
 import time
 import zipfile
+
+ZIP_FILE_PATH = '/tmp/ziptests/'
+TRACKING_FILE_PATH = ZIP_FILE_PATH + 'uploaded_files.json'
 
 def extract_identifier(filename):
     match = re.search(r'\d+', filename)
@@ -24,13 +28,32 @@ def round_up(num, divisor):
         return num
     return num + (divisor - num % divisor)
 
-def wait_for_200(url, timeout=60, interval=5, max_attempts=None):
+def update_tracking_file(file_path):
+    try:
+        with open(TRACKING_FILE_PATH, 'r') as file:
+            uploaded_files = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        uploaded_files = []
+
+    if file_path not in uploaded_files:
+        uploaded_files.append(file_path)
+        with open(TRACKING_FILE_PATH, 'w') as file:
+            json.dump(uploaded_files, file)
+
+def is_file_uploaded(file_path):
+    try:
+        with open(TRACKING_FILE_PATH, 'r') as file:
+            uploaded_files = json.load(file)
+        return file_path in uploaded_files
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+def wait_for_200(url, timeout=60, interval=5):
     """
     Check a URL repeatedly until a 200 status code is returned.
 
     Parameters:
     - url: The URL to check.
-    - timeout: The maximum time to wait for a 200 response, in seconds.
     - interval: The time to wait between checks, in seconds.
     - max_attempts: The maximum number of attempts to check the URL (None for unlimited).
     """
@@ -61,10 +84,6 @@ def wait_for_200(url, timeout=60, interval=5, max_attempts=None):
             return False
 
         elapsed_time = time.time() - start_time
-        if elapsed_time + interval > timeout:
-            message = f"An error occurred in wait_for_200(): Timeout reached ({timeout} seconds) without success."
-            print(message)
-            return False
         time.sleep(interval)
 
 def upload_file_using_pyDataverse(files):
@@ -158,18 +177,21 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
         for index, row in grouped.iterrows():
             zip_filename = f"group_{row['Group']}_{row['Rounded_Min']}-{row['Rounded_Max']}.zip"
             dub_zip_filename = f"{zip_filename}.zip"
+            if is_file_uploaded(dub_zip_filename):
+                print(f"File already uploaded: {dub_zip_filename}")
+                continue
 
             current_directory = os.path.dirname(os.path.realpath(__file__))
 
-            zip_filepath = os.path.join('/tmp/ziptests/', zip_filename)
-            dub_zip_filepath = os.path.join('/tmp/ziptests/', dub_zip_filename)
+            zip_filepath = os.path.join(ZIP_FILE_PATH, zip_filename)
+            dub_zip_filepath = os.path.join(ZIP_FILE_PATH, dub_zip_filename)
 
             hashes_exist = False
             if LOCAL_FS_HASHES_FROM_JSON:
                 hashes_exist = True
 
             manifest = []
-            total, used, free = shutil.disk_usage("/tmp/ziptests/")
+            total, used, free = shutil.disk_usage(ZIP_FILE_PATH)
             free_gb = free / (2**30)
             free_gb_rounded = round(free_gb, 2)
             print("Free space:", free_gb_rounded, "GB")
@@ -194,7 +216,7 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
                 print("Not enough space to create zip file. Exiting.")
                 sys.exit(1)
 
-            remove_zip_files('/tmp/ziptests/')
+            remove_zip_files(ZIP_FILE_PATH)
 
             with zipfile.ZipFile(zip_filepath, 'w') as zipf:
                 for filename in row['Filenames']:
@@ -205,6 +227,7 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
                     })
                     if os.path.isfile(filepath):
                         zipf.write(filepath, arcname=filename)
+
             description = "Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog:\n"
 
             for item in manifest:
