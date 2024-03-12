@@ -9,6 +9,7 @@ import re
 from requests.exceptions import SSLError, ConnectionError
 import requests
 import shutil
+import subprocess
 import sys
 import time
 import zipfile
@@ -40,13 +41,63 @@ def update_tracking_file(file_path):
         with open(TRACKING_FILE_PATH, 'w') as file:
             json.dump(uploaded_files, file)
 
-def is_file_uploaded(file_path):
+def is_file_uploaded(check_file_name):
     try:
+        # If file doesn't exist or is empty, create it with an empty list
+        if not os.path.isfile(TRACKING_FILE_PATH) or os.path.getsize(TRACKING_FILE_PATH) == 0:
+            with open(TRACKING_FILE_PATH, 'w') as file:
+                json.dump([], file)
+        # Read the file and check if check_file_name is in the list
         with open(TRACKING_FILE_PATH, 'r') as file:
             uploaded_files = json.load(file)
-        return file_path in uploaded_files
+
+        # Extract the filename from each path and check if check_file_name matches any
+        return any(check_file_name == os.path.basename(file_path) for file_path in uploaded_files)
     except (FileNotFoundError, json.JSONDecodeError):
         return False
+
+def cleanup_storage():
+    # https://guides.dataverse.org/en/latest/api/native-api.html#cleanup-storage-of-a-dataset
+    dryrun_url = f"{SERVER_URL}/api/datasets/:persistentId/cleanStorage?persistentId={DATASET_PERSISTENT_ID}&dryrun=true"
+    headers = {"X-Dataverse-key": DATAVERSE_API_TOKEN}
+
+    # Initial dry run to get the list of files
+    response = requests.get(dryrun_url, headers=headers)
+    if response.status_code == 200:
+        response_data = response.json()
+        if 'data' in response_data and 'message' in response_data['data']:
+            message = response_data['data']['message']
+            # Split the message to extract the "Found" and "Deleted" parts
+            found_items = [item.strip() for item in message.split('\nDeleted:')[0].replace('Found: ', '').split(',') if item.strip()]
+            deleted_items = [item.strip() for item in message.split('\nDeleted:')[1].split(',') if item.strip()] if '\nDeleted:' in message else []
+            found_count = len(found_items)
+            deleted_count = len(deleted_items)
+
+            print(f"Files registered: {found_count}")
+            print(f"Files not registered and to be cleaned up: {deleted_count}")
+
+            # Bypass the prompt if there are no files to delete
+            if deleted_count == 0:
+                print("No files to clean up. Exiting.")
+                return
+
+            # If there are files to clean up, prompt the user for confirmation
+            user_input = input(f"Proceed with cleanup of {deleted_count} files? [y/N]: ").strip().lower()
+            if user_input == 'y':
+                cleanup_url = f"{SERVER_URL}/api/datasets/:persistentId/cleanStorage?persistentId={DATASET_PERSISTENT_ID}&dryrun=false"
+                cleanup_response = requests.get(cleanup_url, headers=headers)
+                print(f"Cleaning up {deleted_count} files...")
+                if cleanup_response.status_code == 200:
+                    print("Cleanup successful.")
+                    print(cleanup_response.json())
+                else:
+                    print("Cleanup failed.")
+            else:
+                print("Cleanup bypassed.")
+        else:
+            print("Unexpected response format.")
+    else:
+        print("Failed to retrieve the list of files for cleanup.")
 
 def wait_for_200(url, timeout=60, interval=5):
     """
@@ -86,45 +137,159 @@ def wait_for_200(url, timeout=60, interval=5):
         elapsed_time = time.time() - start_time
         time.sleep(interval)
 
-def upload_file_using_pyDataverse(files):
+def s3_direct_upload_file_using_curl(file_info, retry_delay=10):
     """
-    Upload files to a Dataverse dataset.
+    Upload files to a Dataverse dataset using curl for S3 direct upload.
 
     Args:
     - files (list of dicts): List containing file metadata and paths.
     """
+    while True:
+        # Extract file details
+        directory_label = file_info.get('directoryLabel')
+        filepath = file_info.get('filepath')
+        mime_type = file_info.get('mimeType')
+        description = file_info.get('description')
+        size = os.path.getsize(filepath)
+        # Execute the curl command
+        try:
+            curl_command_for_file_url = f"curl -H 'X-Dataverse-key:{DATAVERSE_API_TOKEN}' '{SERVER_URL}/api/datasets/:persistentId/uploadurls?persistentId={DATASET_PERSISTENT_ID}&size={size}'"
+            upload_to_tmp_output = subprocess.check_output(curl_command_for_file_url, shell=True, text=True)
+            data = json.loads(upload_to_tmp_output)
+
+            # Extract the "storageIdentifier", "partSize", and "url" values
+            storage_identifier = data['data']['storageIdentifier']
+            part_size = data['data']['partSize']
+            url = data['data']['url']
+            # Execute the curl command and capture the output
+            upload_into_s3_url = subprocess.check_output(
+                f"curl -i -H 'x-amz-tagging:dv-state=temp' -X PUT -T {filepath} '{url}'",
+                shell=True,
+                text=True
+            )
+            # Initialize variables for the values we want to extract
+            x_amz_request_id = None
+            e_tag = None
+            # Split the upload_into_s3_url by new lines and iterate through it to find the desired headers
+            for line in upload_into_s3_url.split('\n'):
+                if line.startswith('x-amz-request-id:'):
+                    x_amz_request_id = line.split(':', 1)[1].strip()
+                elif line.startswith('ETag:'):
+                    e_tag = line.split(':', 1)[1].strip()
+            # Now x_amz_request_id and e_tag variables hold the extracted values
+            file_hash = f"{e_tag}"
+            # Construct the JSON payload
+            payload = {
+                'description': f"{description}",
+                'directoryLabel': f"{directory_label}",
+                'mimeType': f"{mime_type}",
+                'contentType': f"{mime_type}",
+                'storageIdentifier': f"{storage_identifier}",
+                'restrict': 'false',
+                'fileName': os.path.basename(filepath),
+                'fileSystemName': os.path.basename(filepath),
+                'checksum': {'@type': 'MD5', '@value': f"{file_hash}"},
+                'categories': [],
+                'restrict': False
+            }
+            payload_str = json.dumps(payload)
+            register_files_command = f"curl -X POST -H 'X-Dataverse-key: {DATAVERSE_API_TOKEN}' '{SERVER_URL}/api/datasets/:persistentId/add?persistentId={DATASET_PERSISTENT_ID}' -F 'jsonData={payload_str}'"
+            register_files = subprocess.check_output(register_files_command, shell=True, text=True)
+            print("curl_command_for_file_url")
+            print(curl_command_for_file_url)
+            print(f"storageIdentifier: {storage_identifier}")
+            print(f"partSize: {part_size}")
+            print(f"url: {url}")
+            print(f"curl -i -H 'x-amz-tagging:dv-state=temp' -X PUT -T {filepath} '{url}'")
+            print("upload_into_s3_url")
+            print(upload_into_s3_url)
+            print(f"x-amz-request-id: {x_amz_request_id}")
+            print(f"ETag/File Hash: {e_tag}")
+            print("payload")
+            print(payload_str)
+            print(register_files_command)
+            print(register_files)
+        except subprocess.TimeoutExpired:
+            print(f"Failed to upload file: {filepath} because of timeout. Error: {e.output}")
+            time.sleep(retry_delay)
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to upload file: {filepath}. Error: {e.output}")
+            time.sleep(retry_delay)
+        except SSLError as e:
+            print(f"An error occurred in s3_direct_upload_file_using_curl(): SSL error: {e}, retrying...")
+            time.sleep(retry_delay)
+        except ConnectionError as e:
+            print(f"An error occurred in s3_direct_upload_file_using_curl(): Connection error: {e}, retrying...")
+            time.sleep(retry_delay)
+        except Exception as e:
+            print(f"An error occurred in s3_direct_upload_file_using_curl(): {e}, retrying...")
+            time.sleep(retry_delay)
+        else:
+            print(f"File uploaded successfully: {filepath}")
+            update_tracking_file(filepath)
+            time.sleep(retry_delay)
+            break
+
+def upload_file_using_dvuploader(files, retry_delay=10):
+    """
+    Upload files to a Dataverse dataset and keep trying indefinitely upon SSL and connection errors.
+
+    Args:
+    - files (list of dicts): List containing file metadata and paths.
+    - retry_delay (int): Delay between retries in seconds.
+    """
     # Initialize the Dataverse API
-    api = pyDataverse.api.NativeApi(SERVER_URL, DATAVERSE_API_TOKEN)
-    data_access_api = pyDataverse.api.DataAccessApi(SERVER_URL, DATAVERSE_API_TOKEN)
+    # api = pyDataverse.api.NativeApi(SERVER_URL, DATAVERSE_API_TOKEN)
+    while True:
+        try:
+            # Extract file details
+            directory_label = ''
+            filepath = files.get('filepath')
+            mime_type = files.get('mimeType')
+            description = files.get('description')
 
-    # Extract file details
-    directory_label = ''
-    filepath = files.get('filepath')
-    mime_type = files.get('mimeType')
-    description = files.get('description')
+            # Prepare the metadata for the file
+            file_metadata = {
+                'description': description,
+                "filepath": filepath,
+                'mimeType': mime_type,
+                'directoryLabel': directory_label,
+                'categories': [],
+                'restrict': False
+            }
 
-    # Prepare the metadata for the file
-    file_metadata = {
-        'description': description,
-        'directoryLabel': directory_label,
-        'categories': [],
-        'restrict': False
-    }
+            # convert file metadata to a list
+            upload_files = [File(**file_metadata)]
 
-    # Convert metadata to JSON format as required by the API
-    file_metadata_json = json.dumps(file_metadata)
+            # Make sure the server is ready to accept the file
+            wait_for_200(SERVER_URL, timeout=60, interval=5)
 
-    # Make sure the server is ready to accept the file
-    wait_for_200(SERVER_URL, timeout=60, interval=5)
+            print("Upload starting...")
+            print('-' * 40)
+            dvuploader = DVUploader(files=upload_files)
+            dvuploader.upload(
+                api_token=DATAVERSE_API_TOKEN,
+                dataverse_url=SERVER_URL,
+                persistent_id=DATASET_PERSISTENT_ID,
+            )
 
-    # Upload the file
-    resp = api.upload_datafile(DATASET_PERSISTENT_ID, filepath, file_metadata_json, mime_type)
-
-    if resp.status_code == 200:
-        print(f"File uploaded successfully: {filepath}")
-    else:
-        print(f"Failed to upload file: {filepath}. Response: {resp.text}")
-        sys.exit(1)
+            time.sleep(retry_delay)
+        except SSLError as e:
+            time.sleep(retry_delay)
+            print(f"An error occurred in upload_file_using_dvuploader(): SSL error: {e}, retrying...")
+            time.sleep(5)
+        except ConnectionError as e:
+            time.sleep(retry_delay)
+            print(f"An error occurred in upload_file_using_dvuploader(): Connection error: {e}, retrying...")
+            time.sleep(retry_delay)
+        except Exception as e:
+            print(f"An error occurred in upload_file_using_dvuploader(): {e}, retrying...")
+            time.sleep(retry_delay)
+        else:
+            print(f"File uploaded successfully: {filepath}")
+            update_tracking_file(filepath)
+            time.sleep(retry_delay)
+            break
 
 def remove_zip_files(directory):
     """
@@ -265,14 +430,16 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
 
             time.sleep(3)
 
-            # Upload using upload_file_using_pyDataverse
+            # Upload using upload_file_using_dvuploader
             file_info = {
                 'directoryLabel': '',
                 'filepath': f"{dub_zip_filepath}",
                 'mimeType': 'application/zip',
                 'description': description
             }
-            upload_file_using_pyDataverse(file_info)
+            # Upload Methods
+            upload_file_using_dvuploader(file_info)
+            # s3_direct_upload_file_using_curl(file_info)
 
             print("Deleting zip file...")
             remove_zip_files('/tmp/ziptests/')
@@ -370,5 +537,7 @@ if __name__ == "__main__":
     else:
         print(f"❌ - The file: {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES} does not exist or is empty\n\n")
         sys.exit(1)
+
+    cleanup_storage()
     process_directory(NORMALIZED_FOLDER_PATH, args.divisor, args.num_groups, args.output, args.dry_run)
     print("Done...")
