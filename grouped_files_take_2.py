@@ -413,7 +413,7 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
                     })
                     if os.path.isfile(filepath):
                         # Full path to the file
-                        file_path = os.path.join(root, filename)
+                        file_path = os.path.join(root, filepath)
                         # Calculate relative path for use in the zip
                         relative_path = os.path.relpath(file_path, directory_path)
                         # Add the file to the zip
