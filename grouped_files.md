@@ -19,6 +19,11 @@ In summary, this script is designed to take a large dataset of filenames, extrac
 ```shell
 python -m pip install argparse json pandas re
 
-# To run the script
+# To run the script (2 options)
+
+# Complex sort by pandas
 pipenv run python grouped_files.py --file_list_path /path/file_list_sorted.txt
+
+# Sort by static number (1000)
+pipenv run python grouped_files_take_2.py --file_list_path /path/file_list_sorted.txt
 ```
