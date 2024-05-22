@@ -3,7 +3,6 @@ from dvuploader import DVUploader, File
 import json
 from mimetype_description import guess_mime_type, get_mime_type_description
 import os
-import pandas as pd
 import pyDataverse.api
 import re
 from requests.exceptions import SSLError, ConnectionError
@@ -240,6 +239,7 @@ def upload_file_using_dvuploader(files, retry_delay=10):
     """
     # Initialize the Dataverse API
     # api = pyDataverse.api.NativeApi(SERVER_URL, DATAVERSE_API_TOKEN)
+    print(f"files: {files}")
     while True:
         try:
             # Extract file details
@@ -295,95 +295,116 @@ def remove_zip_files(directory):
     """
     Remove all zip files within a directory.
     """
+    print(f"Removing zip files from {directory}")
     for filename in os.listdir(directory):
         if filename.endswith('.zip'):
             filename = os.path.join(directory, filename)
             os.remove(filename)
+def extract_identifier(filename):
+    """
+    Extract the numeric identifier from thezip_filename = f"group_{row['Group']}_{row['Rounded_Min']}-{row['Rounded_Max']}.zip" filename.
+    """
+    identifier_part = filename.split('_')[-1].split('.')[0]
+    return int(identifier_part)
+
+def group_files(input_file, output_file, max_group_size=1000):
+    """
+    Group files from the input file and write the groups to the output file.
+    """
+    # Read the file paths from the input file
+    with open(input_file, 'r') as f:
+        file_paths = [line.strip() for line in f.readlines()]
+
+    # Sort the file paths based on the extracted identifier
+    file_paths.sort(key=lambda x: extract_identifier(os.path.basename(x)))
+
+    # Group the file paths into groups of up to max_group_size
+    grouped_files = []
+    for i in range(0, len(file_paths), max_group_size):
+        group_files = file_paths[i:i+max_group_size]
+        group_number = len(grouped_files) + 1
+        group_range = f"{extract_identifier(os.path.basename(group_files[0]))}-{extract_identifier(os.path.basename(group_files[-1]))}"
+        grouped_files.append({
+            "Group": group_number,
+            "Range": group_range,
+            "Filenames": group_files
+        })
+
+    # Write the grouped files to the output file
+    with open(output_file, 'w') as f:
+        json.dump(grouped_files, f, indent=4)
 
 def process_directory(directory_path, divisor, num_groups, output_json_path, dry_run):
     """
     Process the directory and create groups of files.
     """
-    if os.path.isfile(COMPILED_GROUPED_FILES_JSON) and os.path.getsize(COMPILED_GROUPED_FILES_JSON) > 0:
-        print(f"Reading existing results from {COMPILED_GROUPED_FILES_JSON}")
-        with open(COMPILED_GROUPED_FILES_JSON, 'r') as file:
-            results = json.load(file)
-        print(f"Found {len(results)} groups")
-        if dry_run:
-            print("Dry run. No file will be written. Here's the data that would be included:")
-            print(json.dumps(results, indent=4))
-            return
-
-        # Create the grouped DataFrame from the existing results
-        grouped = pd.DataFrame(results)
-
-        # Check if the 'Range' column has the correct format
-        if pd.api.types.is_string_dtype(grouped['Range']):
-            # Filter out rows with null or empty 'Range' values
-            grouped = grouped[grouped['Range'].notnull() & (grouped['Range'] != '')]
-
-            # Extract 'Rounded_Min' and 'Rounded_Max' using regular expressions
-            grouped[['Rounded_Min', 'Rounded_Max']] = grouped['Range'].str.extract(r'^(\d+)-(\d+)$', expand=True).astype(int)
-            grouped = grouped[['Group', 'Filenames', 'Rounded_Min', 'Rounded_Max']]
-        else:
-            print("Error: The 'Range' column is not of string type. Exiting.")
-            sys.exit(1)
-
-        results = [{
-            'Group': row['Group'],
-            'Range': f"{row['Rounded_Min']}-{row['Rounded_Max']}",
-            'Filenames': row['Filenames']
-        } for _, row in grouped.iterrows()]
-        with open(COMPILED_GROUPED_FILES_JSON, 'w') as file:
-            json.dump(results, file, indent=4)
+    grouped = []
+    results = []
+     # Check if the compiled JSON file does not exist and start processing
+    if not os.path.isfile(COMPILED_GROUPED_FILES_JSON) or args.wipe:
+        print(f"Creating new groups from {directory_path}")
+        group_files(LOCAL_FILE_LIST, COMPILED_GROUPED_FILES_JSON)
         print(f"Output has been written to {COMPILED_GROUPED_FILES_JSON}")
 
-    if not dry_run:
-        for index, row in grouped.iterrows():
-            zip_filename = f"group_{row['Group']}_{row['Rounded_Min']}-{row['Rounded_Max']}.zip"
-            dub_zip_filename = f"{zip_filename}.zip"
-            if is_file_uploaded(dub_zip_filename):
-                print(f"File already uploaded: {dub_zip_filename}")
-                continue
+    print(f"Reading the compiled JSON file: {COMPILED_GROUPED_FILES_JSON}")
+    time.sleep(3)
+    with open(COMPILED_GROUPED_FILES_JSON, 'r') as file:
+        results = json.load(file)
 
-            current_directory = os.path.dirname(os.path.realpath(__file__))
+    for index, row in enumerate(results):
+        # Results is a json object with the following structure:
+        # [
+        #     {
+        #         "Group": 1,
+        #         "Range": "0-999",
+        #         "Filenames": [
+        #             "file1.txt",
+        #             "file2.txt",
+        #             ...
+        #         ]
+        #     },
+        #     ...
+        # ]
 
-            zip_filepath = os.path.join(ZIP_FILE_PATH, zip_filename)
-            dub_zip_filepath = os.path.join(ZIP_FILE_PATH, dub_zip_filename)
+        zip_filename = f"group_{row['Group']}_{row['Range']}.zip"
+        
+        if is_file_uploaded(zip_filename):
+            print(f"File already uploaded: {zip_filename}")
+            continue
 
-            hashes_exist = False
-            if LOCAL_FS_HASHES_FROM_JSON:
-                hashes_exist = True
+        zip_filepath = os.path.join(ZIP_FILE_PATH, zip_filename)
 
-            manifest = []
-            total, used, free = shutil.disk_usage(ZIP_FILE_PATH)
-            free_gb = free / (2**30)
-            free_gb_rounded = round(free_gb, 2)
-            print("Free space:", free_gb_rounded, "GB")
-            total_size = 0
-            for size_filename in row['Filenames']:
-                size_filename = os.path.join(directory_path, size_filename)
-                if os.path.isfile(size_filename):
-                    file_size = os.path.getsize(size_filename)
-                    total_size += file_size
+        hashes_exist = False
+        if LOCAL_FS_HASHES_FROM_JSON:
+            hashes_exist = True
 
-            # Double the total size to account for the second zip file
-            total_size = total_size * 2
+        manifest = []
+        total, used, free = shutil.disk_usage(ZIP_FILE_PATH)
+        free_gb = free / (2**30)
+        free_gb_rounded = round(free_gb, 2)
+        print("Free space:", free_gb_rounded, "GB")
+        total_size = 0
+        for size_filename in row['Filenames']:
+            size_filename = os.path.join(directory_path, size_filename)
+            if os.path.isfile(size_filename):
+                file_size = os.path.getsize(size_filename)
+                total_size += file_size
 
-            # Convert the total size from bytes to gigabytes without unnecessary multiplication
-            total_size_gb = total_size / (1024 ** 3)
-            total_size_gb_rounded = round(total_size_gb, 2)
+        # Convert the total size from bytes to gigabytes without unnecessary multiplication
+        total_size_gb = total_size / (1024 ** 3)
+        total_size_gb_rounded = round(total_size_gb, 2)
 
-            print(f"Estimated uncompressed total size needed: {total_size_gb_rounded} GB")
+        print(f"Estimated uncompressed total size needed: {total_size_gb_rounded} GB")
 
-            # Compare available space to the required size
-            if free_gb_rounded < total_size_gb_rounded:
-                print("Not enough space to create zip file. Exiting.")
-                sys.exit(1)
+        # Compare available space to the required size
+        if free_gb_rounded < total_size_gb_rounded:
+            print("Not enough space to create zip file. Exiting.")
+            sys.exit(1)
 
-            remove_zip_files(ZIP_FILE_PATH)
+        remove_zip_files(ZIP_FILE_PATH)
 
-            with zipfile.ZipFile(zip_filepath, 'w') as zipf:
+        with zipfile.ZipFile(zip_filepath, 'w') as zipf:
+            for root, dirs, files in os.walk(directory_path):
                 for filename in row['Filenames']:
                     filepath = os.path.join(directory_path, filename)
                     file_hash = LOCAL_FS_HASHES_FROM_JSON.get(filepath, None)
@@ -391,67 +412,65 @@ def process_directory(directory_path, divisor, num_groups, output_json_path, dry
                         filename: file_hash
                     })
                     if os.path.isfile(filepath):
-                        zipf.write(filepath, arcname=filename)
+                        # Full path to the file
+                        file_path = os.path.join(root, filepath)
+                        # Calculate relative path for use in the zip
+                        relative_path = os.path.relpath(file_path, directory_path)
+                        # Add the file to the zip
+                        zipf.write(file_path, arcname=relative_path)
+        description = f"Posterior distributions of the stellar parameters from 'PlatinumSGB' files for the star with ID from the Gaia DR3 catalog:\n"
+        for item in manifest:
+            for filepath, hash_value in item.items():
+                filename = os.path.basename(filepath)
+                # Manipulate the filename for the description
+                filename_no_ext = os.path.splitext(filename)[0]
+                filename_without_prefix = filename_no_ext.replace('PlatinumSGB_', '')
+                # If not the last filename in the list then add a comma and newline else just add the newline.
+                if filename != row['Filenames'][-1]:
+                    description += f"{filename_without_prefix},\n"
+                else:
+                    description += f"{filename_without_prefix}"
+                # Remove the trailing comma and newline
+        description = description.rstrip(',\n')
+        if args.debug:
+            print("Debug information:")
+            print("\nDescription:")
+            print(description)
+            print(f"Debug: {zip_filename} - {description}")
+            file_size = os.path.getsize(zip_filepath)
+            # Adjust the file size to gigabytes
+            file_size = file_size / (1024 * 1024 * 1024)
+            print(f"File size of {zip_filename}: {file_size} GB")
+            results[index]['File_Size'] = file_size
+            print(f"Extracting zip file: {zip_filename}")
+            with zipfile.ZipFile(zip_filepath, 'r') as zip_ref:
+                zip_ref.extractall(f"check_{zip_filepath}")
+            print(f"Extracted zip file: {zip_filename}")
+            print("Please inspect the zip file and its contents.")
+            sys.exit(1)
 
-            description = "Posterior distributions of the stellar parameters for the star with ID from the Gaia DR3 catalog:\n"
+        time.sleep(3)
 
-            for item in manifest:
-                for filepath, hash_value in item.items():
-                    filename = os.path.basename(filepath)
-                    # Manipulate the filename for the description
-                    filename_no_ext = os.path.splitext(filename)[0]
-                    filename_final = filename_no_ext.replace('_', ' ')
-                    description += filename_final + "\n"
-                    # description = description.rstrip('\n')
+        # Upload using upload_file_using_dvuploader
+        file_info = {
+            'directoryLabel': '',
+            'filepath': f"{zip_filepath}",
+            'mimeType': 'application/zip',
+            'description': description
+        }
+        # Upload Methods
+        upload_file_using_dvuploader(file_info)
+        # s3_direct_upload_file_using_curl(file_info)
 
-            # Double zip the file
-            with zipfile.ZipFile(dub_zip_filepath, 'a') as dubzipf:
-                if os.path.isfile(zip_filepath):
-                    dubzipf.write(zip_filepath, arcname=dub_zip_filename)
+        print("Deleting zip file...")
+        remove_zip_files('/tmp/ziptests/')
+        print(f"Deleted zip file: {zip_filename}\n")
+        sys.stdout.flush()
 
-            print(f"Created zip file: {dub_zip_filepath}")
-
-            if args.debug:
-                print("Debug information:")
-                print("\nDescription:")
-                print(description)
-                print(f"Debug: {zip_filename} - {description}")
-                file_size = os.path.getsize(dub_zip_filepath)
-                # Adjust the file size to gigabytes
-                file_size = file_size / (1024 * 1024 * 1024)
-                print(f"File size of {zip_filename}: {file_size} GB")
-                results[index]['File_Size'] = file_size
-                print(f"Extracting zip file: {zip_filename}")
-                with zipfile.ZipFile(dub_zip_filepath, 'r') as zip_ref:
-                    zip_ref.extractall(f"check_{dub_zip_filepath}")
-                print(f"Extracted zip file: {zip_filename}")
-                print("Please inspect the zip file and its contents.")
-                sys.exit(1)
-
-            time.sleep(3)
-
-            # Upload using upload_file_using_dvuploader
-            file_info = {
-                'directoryLabel': '',
-                'filepath': f"{dub_zip_filepath}",
-                'mimeType': 'application/zip',
-                'description': description
-            }
-            # Upload Methods
-            upload_file_using_dvuploader(file_info)
-            # s3_direct_upload_file_using_curl(file_info)
-
-            print("Deleting zip file...")
-            remove_zip_files('/tmp/ziptests/')
-            print(f"Deleted zip file: {zip_filename}\n")
-            sys.stdout.flush()
-
-        # Writing results to the JSON file
-        with open(output_json_path, 'w') as outfile:
-            json.dump(results, outfile, indent=4)
-        print(f"Output has been written to {output_json_path}")
-    else:
-        print("Failed to retrieve the list of files for cleanup.")
+    # Writing results to the JSON file
+    with open(output_json_path, 'w') as outfile:
+        json.dump(results, outfile, indent=4)
+    print(f"Output has been written to {output_json_path}")
 
 def sanitize_folder_path(folder_path):
     """
@@ -505,15 +524,25 @@ if __name__ == "__main__":
     NORMALIZED_FOLDER_PATH = os.path.normpath(args.directory_path)
     SANITIZED_FILENAME = sanitize_folder_path(os.path.abspath(args.directory_path))
     LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES = os.getcwd() + '/' + SANITIZED_FILENAME + '.json'
-    COMPILED_GROUPED_FILES_JSON = os.getcwd() + '/' + SANITIZED_FILENAME + '_grouped_files.json'
+    COMPILED_GROUPED_FILES_JSON = os.getcwd() + '/' + SANITIZED_FILENAME + '_' + str(args.num_groups) + '_grouped_files.json'
+    LOCAL_FILE_LIST = os.getcwd() + '/' + SANITIZED_FILENAME + '_file_list.txt'
 
     if args.wipe:
         print("Wiping the group json file...")
-        if os.path.isfile(COMPILED_GROUPED_FILES_JSON) and os.path.getsize(COMPILED_GROUPED_FILES_JSON) > 0:
-            with open(COMPILED_GROUPED_FILES_JSON, 'w') as file:
-                file.write('')
-        print("Done wiping COMPILED_GROUPED_FILES_JSON file.")
-        sys.exit(1)
+        if os.path.isfile(COMPILED_GROUPED_FILES_JSON) or os.path.isfile(TRACKING_FILE_PATH):
+            try:
+                if os.path.isfile(COMPILED_GROUPED_FILES_JSON):
+                    os.remove(COMPILED_GROUPED_FILES_JSON)
+                    print(f"\n✓ File Removed:\n\t {COMPILED_GROUPED_FILES_JSON} ...\n")
+                if os.path.isfile(TRACKING_FILE_PATH):
+                    os.remove(TRACKING_FILE_PATH)
+                    print(f"\n✓ File Removed:\n\t {TRACKING_FILE_PATH} ...\n")
+            except OSError as e:
+                print(f"Error: {e.strerror}")
+                sys.exit(1)
+        else:
+            print(f"\n❌ - The file: {COMPILED_GROUPED_FILES_JSON} either/or {TRACKING_FILE_PATH} \n\t 👻 Scoured the digital realm, but alas, the file is a ghost. Nothing to sweep away from the virtual floors.\n\n")
+        remove_zip_files(ZIP_FILE_PATH)
 
     print(f"🔍 - Verifying the existence of the folder: {NORMALIZED_FOLDER_PATH}...")
     if has_read_access(NORMALIZED_FOLDER_PATH):
@@ -535,6 +564,12 @@ if __name__ == "__main__":
             LOCAL_FS_HASHES_FROM_JSON = json.loads(data)
     else:
         print(f"❌ - The file: {LOCAL_JSON_FILE_WITH_LOCAL_FS_HASHES} does not exist or is empty\n\n")
+        sys.exit(1)
+
+    if os.path.isfile(LOCAL_FILE_LIST) and os.path.getsize(LOCAL_FILE_LIST) > 0:
+        print(f"✓ - The file: {LOCAL_FILE_LIST} exists and is not empty\n")
+    else:
+        print(f"❌ - The file: {LOCAL_FILE_LIST} does not exist or is empty\n\n")
         sys.exit(1)
 
     cleanup_storage()

@@ -24,4 +24,7 @@ pipenv install install argparse json pandas re
 
 # To run the script
 pipenv run python grouped_files.py --file_list_path /path/file_list_sorted.txt
+
+# Sort by static number (1000)
+pipenv run python grouped_files_take_2.py --file_list_path /path/file_list_sorted.txt
 ```
