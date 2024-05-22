@@ -1,3 +1,6 @@
 __pycache__/
 .DS_Store
 test_files/
+log.log
+
+output.txt

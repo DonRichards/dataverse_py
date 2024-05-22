@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-dvuploader = "*"
 pydataverse = "*"
 mimetype-description = "*"
 grequests = "*"
@@ -13,6 +12,9 @@ astropy = "*"
 gevent = "*"
 pyyaml = "*"
 pathlib = "*"
+pipenv = "*"
+dvuploader = {file = "python-dvuploader"}
+pandas = "*"
 
 [dev-packages]
 

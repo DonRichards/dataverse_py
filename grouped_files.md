@@ -19,6 +19,9 @@ In summary, this script is designed to take a large dataset of filenames, extrac
 ```shell
 python -m pip install argparse json pandas re
 
+# OR
+pipenv install install argparse json pandas re
+
 # To run the script
 pipenv run python grouped_files.py --file_list_path /path/file_list_sorted.txt
 ```

@@ -927,7 +927,6 @@ if __name__ == "__main__":
     local_fs_files_array = get_files_with_hashes_list()
     COMPILED_FILE_LIST_WITH_MIMETYPES = set_files_and_mimetype_to_exported_file(local_fs_files_array)
     cleanup_storage()
-
     while NOT_ALL_FILES_ONLINE is not False:
         print("🔄 - Checking if all files are online and running the file batch size of {}...".format(FILES_PER_BATCH))
         print("🚀 - Identified that not all files were uploaded. Starting the upload process...\n")
